@@ -4280,6 +4280,42 @@ namespace BizHawk.Client.EmuHawk
 				}
 				RA?.OnSaveState(path);
 
+				// Take screenshot for QuickSave slots
+				if (userFriendlyStateName.StartsWith("QuickSave", StringComparison.OrdinalIgnoreCase))
+				{
+					try
+					{
+						// Extract slot number from "QuickSave{slot}" format
+						var slotStr = userFriendlyStateName.Substring("QuickSave".Length);
+						if (int.TryParse(slotStr, out int slot))
+						{
+							// Save screenshot in the same directory as the save state
+							var stateDir = Path.GetDirectoryName(path);
+							var screenshotPath = Path.Combine(stateDir, $"{slot}.png");
+							
+							// Replace if exists
+							if (File.Exists(screenshotPath))
+							{
+								File.Delete(screenshotPath);
+							}
+							
+							// Take screenshot
+							var fi = new FileInfo(screenshotPath);
+							fi.Directory?.Create();
+							using (var bb = Config.ScreenshotCaptureOsd ? CaptureOSD() : MakeScreenshotImage())
+							{
+								using var img = bb.ToSysdrawingBitmap();
+								img.Save(fi.FullName, System.Drawing.Imaging.ImageFormat.Png);
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						// Don't fail the save state if screenshot fails
+						Util.DebugWriteLine($"Failed to take screenshot for save state: {ex.Message}");
+					}
+				}
+
 				if (!suppressOSD)
 				{
 					AddOnScreenMessage($"Saved state: {userFriendlyStateName}");
