@@ -715,13 +715,13 @@ namespace BizHawk.Client.EmuHawk
 				{
 					try
 					{
-						var autoloadConfig = ConfigService.Load<AutoloadConfig>(autoloadPath);
-						if (autoloadConfig.Enabled && !string.IsNullOrEmpty(autoloadConfig.RomPath))
+						_autoloadConfig = ConfigService.Load<AutoloadConfig>(autoloadPath);
+						if (_autoloadConfig.Enabled && !string.IsNullOrEmpty(_autoloadConfig.RomPath))
 						{
 							// Resolve path - if relative, make it relative to exe directory
-							var romPath = Path.IsPathRooted(autoloadConfig.RomPath)
-								? autoloadConfig.RomPath
-								: Path.Combine(PathUtils.ExeDirectoryPath, autoloadConfig.RomPath);
+							var romPath = Path.IsPathRooted(_autoloadConfig.RomPath)
+								? _autoloadConfig.RomPath
+								: Path.Combine(PathUtils.ExeDirectoryPath, _autoloadConfig.RomPath);
 							
 							if (File.Exists(romPath))
 							{
@@ -729,7 +729,7 @@ namespace BizHawk.Client.EmuHawk
 								_ = LoadRom(ioa.SimplePath, new LoadRomArgs(ioa));
 								if (Game.IsNullInstance())
 								{
-									ShowMessageBox(owner: null, $"Failed to auto-load ROM from autoload.json: {autoloadConfig.RomPath}");
+									ShowMessageBox(owner: null, $"Failed to auto-load ROM from autoload.json: {_autoloadConfig.RomPath}");
 								}
 							}
 							else if (!Game.IsNullInstance())
@@ -812,6 +812,11 @@ namespace BizHawk.Client.EmuHawk
 
 			if (_argParser.startFullscreen || Config.StartFullscreen)
 			{
+				_needsFullscreenOnLoad = true;
+			}
+			else if (_autoloadConfig != null && _autoloadConfig.Enabled && _autoloadConfig.Fullscreen)
+			{
+				// Check autoload config for fullscreen setting (only if not already set by command line or main config)
 				_needsFullscreenOnLoad = true;
 			}
 
@@ -1783,6 +1788,8 @@ namespace BizHawk.Client.EmuHawk
 		private int _lastOpenRomFilter;
 
 		private readonly ParsedCLIFlags _argParser;
+
+		private AutoloadConfig _autoloadConfig;
 
 		private int _autoDumpLength;
 

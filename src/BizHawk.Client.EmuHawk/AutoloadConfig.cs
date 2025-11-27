@@ -14,6 +14,11 @@ namespace BizHawk.Client.EmuHawk
 		/// Path to the ROM file to auto-load (relative to EmuHawk.exe directory or absolute path)
 		/// </summary>
 		public string RomPath { get; set; } = string.Empty;
+
+		/// <summary>
+		/// Whether to start in fullscreen mode when auto-loading
+		/// </summary>
+		public bool Fullscreen { get; set; } = false;
 	}
 }
 
