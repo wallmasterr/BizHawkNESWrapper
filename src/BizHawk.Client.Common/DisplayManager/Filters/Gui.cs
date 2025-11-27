@@ -292,10 +292,13 @@ namespace BizHawk.Client.Common.Filters
 		public ITexture2D? BackgroundImageTexture;
 		public bool IsPaused;
 		public string? SaveStateDirectory;
+		public string? HighlightImagePath;
+		public int SelectedSlot; // 0-5, starting at 0 (first slot)
 		private bool Nop;
 		private LetterboxingLogic LL;
 		private ITexture2D? _whiteTexture;
 		private ITexture2D?[]? _saveSlotTextures;
+		private ITexture2D? _highlightTexture;
 
 		public bool Config_FixAspectRatio, Config_FixScaleInteger, Config_PadOnly;
 
@@ -310,6 +313,8 @@ namespace BizHawk.Client.Common.Filters
 			Nop = false;
 			// Clean up white texture if it exists (filter is being re-initialized)
 			CleanupWhiteTexture();
+			// Reset selected slot to first slot when initialized
+			SelectedSlot = 0;
 		}
 
 		public override Size PresizeOutput(string channel, Size size)
@@ -479,6 +484,7 @@ namespace BizHawk.Client.Common.Filters
 				
 				// Load and draw save slot images in a 3x2 grid in the bottom half
 				LoadSaveSlotTextures();
+				LoadHighlightTexture();
 				DrawSaveSlotGrid();
 				
 				FilterProgram.GuiRenderer.DisableBlending();
@@ -594,6 +600,85 @@ namespace BizHawk.Client.Common.Filters
 				
 				FilterProgram.GuiRenderer.SetModulateColorWhite();
 				FilterProgram.GuiRenderer.Draw(texture, x + offsetX, y + offsetY, drawWidth, drawHeight);
+			}
+			
+			// Draw highlights on top after all screenshots are drawn
+			for (int slot = 1; slot <= totalSlots; slot++)
+			{
+				var slotIndex = slot - 1;
+				if (slotIndex == SelectedSlot && _highlightTexture != null)
+				{
+					// Calculate position in grid (0-indexed)
+					var col = (slot - 1) % gridCols;
+					var row = (slot - 1) / gridCols;
+					
+					var x = padding + col * (cellWidth + padding);
+					var y = startY + padding + row * (cellHeight + padding);
+					
+					// Apply same scaling as screenshots - maintain aspect ratio
+					var highlightAspect = (float)_highlightTexture.Width / _highlightTexture.Height;
+					var cellAspect = (float)cellWidth / cellHeight;
+					
+					float drawWidth, drawHeight;
+					if (highlightAspect > cellAspect)
+					{
+						// Highlight is wider, fit to width
+						drawWidth = cellWidth;
+						drawHeight = cellWidth / highlightAspect;
+					}
+					else
+					{
+						// Highlight is taller, fit to height
+						drawHeight = cellHeight;
+						drawWidth = cellHeight * highlightAspect;
+					}
+					
+					// Center in cell (same as screenshots)
+					var offsetX = (cellWidth - drawWidth) / 2;
+					var offsetY = (cellHeight - drawHeight) / 2;
+					
+					// Draw highlight on top with same scaling
+					FilterProgram.GuiRenderer.EnableBlending();
+					FilterProgram.GuiRenderer.SetModulateColorWhite();
+					FilterProgram.GuiRenderer.Draw(_highlightTexture, x + offsetX, y + offsetY, drawWidth, drawHeight);
+					FilterProgram.GuiRenderer.DisableBlending();
+				}
+			}
+		}
+
+		private string? _lastHighlightImagePath;
+		private void LoadHighlightTexture()
+		{
+			if (string.IsNullOrEmpty(HighlightImagePath) || !File.Exists(HighlightImagePath))
+			{
+				_highlightTexture?.Dispose();
+				_highlightTexture = null;
+				_lastHighlightImagePath = null;
+				return;
+			}
+
+			// Reload if path changed
+			if (_highlightTexture != null && _lastHighlightImagePath == HighlightImagePath)
+				return;
+
+			// Dispose old texture if path changed
+			if (_lastHighlightImagePath != HighlightImagePath)
+			{
+				_highlightTexture?.Dispose();
+				_highlightTexture = null;
+			}
+
+			try
+			{
+				using var bitmap = new System.Drawing.Bitmap(HighlightImagePath);
+				using var bb = new BitmapBuffer(bitmap, new BitmapLoadOptions());
+				_highlightTexture = FilterProgram.GL.LoadTexture(bb);
+				_lastHighlightImagePath = HighlightImagePath;
+			}
+			catch
+			{
+				// Failed to load, leave as null
+				_lastHighlightImagePath = null;
 			}
 		}
 	}

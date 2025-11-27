@@ -1014,6 +1014,57 @@ namespace BizHawk.Client.EmuHawk
 
 				InputManager.ProcessInput(Input.Instance, CheckHotkey, Config, (ie, handled) =>
 				{
+					// Handle navigation in pause menu
+					if (EmulatorPaused && ie.EventType is InputEventType.Press)
+					{
+						var button = ie.LogicalButton.Button;
+						if (DisplayManager is DisplayManager dm)
+						{
+							// Get current selected slot from the filter program
+							int currentSlot = 0;
+							if (dm.GetCurrentFilterProgram() is BizHawk.Client.Common.Filters.FilterProgram fp)
+							{
+								var fPresent = (BizHawk.Client.Common.Filters.FinalPresentation)fp["presentation"];
+								currentSlot = fPresent?.SelectedSlot ?? 0;
+							}
+							var newSlot = currentSlot;
+							
+							// Arrow keys and D-pad navigation
+							if (button == "Left" || button == "D-Pad Left" || button == "DPad Left")
+							{
+								newSlot = currentSlot > 0 ? currentSlot - 1 : 5; // Wrap around
+								dm.UpdateSelectedSlot(newSlot);
+								return;
+							}
+							else if (button == "Right" || button == "D-Pad Right" || button == "DPad Right")
+							{
+								newSlot = currentSlot < 5 ? currentSlot + 1 : 0; // Wrap around
+								dm.UpdateSelectedSlot(newSlot);
+								return;
+							}
+							else if (button == "Up" || button == "D-Pad Up" || button == "DPad Up")
+							{
+								// Move up one row (3 slots per row)
+								if (currentSlot >= 3)
+									newSlot = currentSlot - 3;
+								else
+									newSlot = currentSlot + 3; // Wrap to bottom row
+								dm.UpdateSelectedSlot(newSlot);
+								return;
+							}
+							else if (button == "Down" || button == "D-Pad Down" || button == "DPad Down")
+							{
+								// Move down one row (3 slots per row)
+								if (currentSlot < 3)
+									newSlot = currentSlot + 3;
+								else
+									newSlot = currentSlot - 3; // Wrap to top row
+								dm.UpdateSelectedSlot(newSlot);
+								return;
+							}
+						}
+					}
+
 					// Handle Escape key and left bumper for pause toggle (same as Emulation > Pause menu)
 					if (ie.EventType is InputEventType.Press)
 					{
@@ -1193,6 +1244,15 @@ namespace BizHawk.Client.EmuHawk
 						var saveStatePrefix = SaveStatePrefix();
 						var saveStateDir = Path.GetDirectoryName(saveStatePrefix);
 						dm.UpdateSaveStateDirectory(saveStateDir);
+						
+						// Load highlight image from save state directory
+						var highlightPath = Path.Combine(saveStateDir, "stateHighlight.png");
+						if (!File.Exists(highlightPath))
+						{
+							// Try in exe directory as fallback
+							highlightPath = Path.Combine(PathUtils.ExeDirectoryPath, "stateHighlight.png");
+						}
+						dm.UpdateHighlightImagePath(File.Exists(highlightPath) ? highlightPath : null);
 					}
 				}
 			}

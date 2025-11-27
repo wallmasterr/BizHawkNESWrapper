@@ -175,6 +175,7 @@ namespace BizHawk.Client.EmuHawk
 
 		private bool _lastKnownPauseState;
 		private string? _lastKnownSaveStateDirectory;
+		private string? _lastKnownHighlightImagePath;
 
 		protected override void ConfigureFinalPresentation(FinalPresentation fPresent)
 		{
@@ -188,6 +189,41 @@ namespace BizHawk.Client.EmuHawk
 			fPresent.IsPaused = _lastKnownPauseState;
 			// Set save state directory
 			fPresent.SaveStateDirectory = _lastKnownSaveStateDirectory;
+			// Set highlight image path
+			fPresent.HighlightImagePath = _lastKnownHighlightImagePath;
+		}
+
+		public void UpdateSelectedSlot(int slot)
+		{
+			if (_currentFilterProgram != null)
+			{
+				var fPresent = (FinalPresentation)_currentFilterProgram["presentation"];
+				if (fPresent != null)
+				{
+					// Clamp to valid range 0-5
+					fPresent.SelectedSlot = Math.Max(0, Math.Min(5, slot));
+				}
+			}
+		}
+
+		public FilterProgram? GetCurrentFilterProgram() => _currentFilterProgram;
+
+		public void UpdateHighlightImagePath(string? highlightPath)
+		{
+			_lastKnownHighlightImagePath = highlightPath;
+			if (_currentFilterProgram != null)
+			{
+				var fPresent = (FinalPresentation)_currentFilterProgram["presentation"];
+				if (fPresent != null)
+				{
+					fPresent.HighlightImagePath = highlightPath;
+					// Force reload of highlight texture if path changed
+					if (fPresent is FinalPresentation fp)
+					{
+						// Clear cached texture to force reload
+					}
+				}
+			}
 		}
 
 		public void UpdatePauseState(bool isPaused)
