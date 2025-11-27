@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace BizHawk.Client.EmuHawk
 {
 	/// <summary>
@@ -30,6 +32,16 @@ namespace BizHawk.Client.EmuHawk
 		/// If empty, no background image will be used
 		/// </summary>
 		public string BackgroundImagePath { get; set; } = string.Empty;
+
+		/// <summary>
+		/// List of available background image paths (relative to EmuHawk.exe directory or absolute paths)
+		/// </summary>
+		public List<string> BackgroundImages { get; set; } = new List<string>();
+
+		/// <summary>
+		/// Index of the currently selected background image in BackgroundImages list
+		/// </summary>
+		public int CurrentBackgroundIndex { get; set; } = 0;
 	}
 }
 

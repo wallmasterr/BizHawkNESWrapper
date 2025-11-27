@@ -217,6 +217,16 @@ namespace BizHawk.Client.EmuHawk
 			DOSSubMenu.DropDownOpened += (_, _) => DOSExportHDDImageToolStripMenuItem.Enabled = Emulator is DOSBox dosbox && dosbox.HasValidHDD();
 			_ = MainformMenu.Items.InsertAfter(NullHawkVSysSubmenu, insert: DOSSubMenu);
 
+			// Add background selection menu item
+			var backgroundImageMenuItem = new ToolStripMenuItemEx 
+			{ 
+				Text = "Background Image...",
+				ShortcutKeys = Keys.F9
+			};
+			backgroundImageMenuItem.Click += BackgroundImageMenuItem_Click;
+			ConfigSubMenu.DropDownItems.Add(new ToolStripSeparatorEx { AutoSize = true });
+			ConfigSubMenu.DropDownItems.Add(backgroundImageMenuItem);
+
 			// Hide Status bar icons and general StatusBar prep
 			MainStatusBar.Padding = new Padding(MainStatusBar.Padding.Left, MainStatusBar.Padding.Top, MainStatusBar.Padding.Left, MainStatusBar.Padding.Bottom); // Workaround to remove extra padding on right
 			PlayRecordStatusButton.Visible = false;
@@ -749,36 +759,7 @@ namespace BizHawk.Client.EmuHawk
 								// Load background image if specified
 								if (!string.IsNullOrEmpty(_autoloadConfig.BackgroundImagePath))
 								{
-									try
-									{
-										var bgImagePath = Path.IsPathRooted(_autoloadConfig.BackgroundImagePath)
-											? _autoloadConfig.BackgroundImagePath
-											: Path.Combine(PathUtils.ExeDirectoryPath, _autoloadConfig.BackgroundImagePath);
-										
-										if (File.Exists(bgImagePath))
-										{
-											try
-											{
-												using var bitmap = new Bitmap(bgImagePath);
-												var bb = new BitmapBuffer(bitmap, new BitmapLoadOptions());
-												_backgroundImageTexture = GL.LoadTexture(bb);
-												DisplayManager.BackgroundImageTexture = _backgroundImageTexture;
-												Util.DebugWriteLine($"Background image loaded: {bgImagePath} ({bitmap.Width}x{bitmap.Height})");
-											}
-											catch (Exception ex)
-											{
-												Util.DebugWriteLine($"Failed to create texture from background image: {ex.Message}");
-											}
-										}
-										else
-										{
-											Util.DebugWriteLine($"Background image file not found: {bgImagePath}");
-										}
-									}
-									catch (Exception ex)
-									{
-										Util.DebugWriteLine($"Failed to load background image: {ex.Message}");
-									}
+									LoadBackgroundImage(_autoloadConfig.BackgroundImagePath);
 								}
 							}
 							else if (!Game.IsNullInstance())
@@ -5046,6 +5027,105 @@ namespace BizHawk.Client.EmuHawk
 					Capture = false;
 				}
 #endif
+			}
+		}
+
+		private void BackgroundImageMenuItem_Click(object sender, EventArgs e)
+		{
+			var autoloadPath = Path.Combine(PathUtils.ExeDirectoryPath, "autoload.json");
+			if (_autoloadConfig == null)
+			{
+				// Try to load existing config
+				if (File.Exists(autoloadPath))
+				{
+					try
+					{
+						_autoloadConfig = ConfigService.Load<AutoloadConfig>(autoloadPath);
+					}
+					catch
+					{
+						_autoloadConfig = new AutoloadConfig();
+					}
+				}
+				else
+				{
+					_autoloadConfig = new AutoloadConfig();
+				}
+			}
+
+			// Ensure BackgroundImages list exists
+			if (_autoloadConfig.BackgroundImages == null)
+			{
+				_autoloadConfig.BackgroundImages = new List<string>();
+			}
+
+			// If current background is not in the list, add it
+			if (!string.IsNullOrEmpty(_autoloadConfig.BackgroundImagePath) &&
+			    !_autoloadConfig.BackgroundImages.Contains(_autoloadConfig.BackgroundImagePath))
+			{
+				_autoloadConfig.BackgroundImages.Add(_autoloadConfig.BackgroundImagePath);
+			}
+
+			using var dialog = new BackgroundSelectionDialog(_autoloadConfig, autoloadPath);
+			if (dialog.ShowDialog(this) == DialogResult.OK)
+			{
+				var selectedPath = dialog.SelectedBackgroundPath;
+				_autoloadConfig.BackgroundImagePath = selectedPath;
+				_autoloadConfig.CurrentBackgroundIndex = _autoloadConfig.BackgroundImages.IndexOf(selectedPath);
+
+				// Save config
+				try
+				{
+					ConfigService.Save(autoloadPath, _autoloadConfig);
+				}
+				catch (Exception ex)
+				{
+					ShowMessageBox(this, $"Failed to save autoload.json: {ex.Message}");
+					return;
+				}
+
+				// Load the new background
+				LoadBackgroundImage(selectedPath);
+				AddOnScreenMessage($"Background image changed to: {Path.GetFileName(selectedPath) ?? selectedPath}");
+			}
+		}
+
+		private void LoadBackgroundImage(string imagePath)
+		{
+			// Dispose old texture
+			_backgroundImageTexture?.Dispose();
+			_backgroundImageTexture = null;
+			DisplayManager.BackgroundImageTexture = null;
+
+			if (string.IsNullOrEmpty(imagePath))
+			{
+				return;
+			}
+
+			try
+			{
+				var bgImagePath = Path.IsPathRooted(imagePath)
+					? imagePath
+					: Path.Combine(PathUtils.ExeDirectoryPath, imagePath);
+
+				if (File.Exists(bgImagePath))
+				{
+					using var bitmap = new Bitmap(bgImagePath);
+					var bb = new BitmapBuffer(bitmap, new BitmapLoadOptions());
+					_backgroundImageTexture = GL.LoadTexture(bb);
+					DisplayManager.BackgroundImageTexture = _backgroundImageTexture;
+					Util.DebugWriteLine($"Background image loaded: {bgImagePath} ({bitmap.Width}x{bitmap.Height})");
+				}
+				else
+				{
+					Util.DebugWriteLine($"Background image file not found: {bgImagePath}");
+					AddOnScreenMessage($"Background image not found: {Path.GetFileName(imagePath)}");
+				}
+			}
+			catch (Exception ex)
+			{
+				Util.DebugWriteLine($"Failed to load background image: {ex.Message}");
+				AddOnScreenMessage($"Failed to load background image: {ex.Message}");
 			}
 		}
 	}
