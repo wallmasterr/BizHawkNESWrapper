@@ -1144,6 +1144,14 @@ namespace BizHawk.Client.EmuHawk
 
 				StepRunLoop_Core();
 				Render();
+				
+				// Update highlight and handle clicks based on mouse position when paused
+				if (EmulatorPaused && DisplayManager is DisplayManager dm)
+				{
+					UpdateHighlightFromMouse(dm);
+					HandleSaveSlotClick(dm);
+				}
+				
 				StepRunLoop_Throttle();
 
 				// HACK: RAIntegration might peek at memory during messages
@@ -1256,6 +1264,102 @@ namespace BizHawk.Client.EmuHawk
 					}
 				}
 			}
+		}
+
+		private int? GetSlotFromMousePosition(DisplayManager dm)
+		{
+			if (_presentationPanel?.Control == null || Game.IsNullInstance())
+				return null;
+			
+			// Get mouse position relative to the presentation panel
+			var mousePos = _presentationPanel.Control.PointToClient(Control.MousePosition);
+			var panelSize = _presentationPanel.Control.Size;
+			
+			// Only check if mouse is in the bottom half (where save slots are displayed)
+			if (mousePos.Y < panelSize.Height / 2)
+				return null;
+			
+			// Get current filter program to access the grid layout
+			if (dm.GetCurrentFilterProgram() is not BizHawk.Client.Common.Filters.FilterProgram fp)
+				return null;
+			
+			var fPresent = (BizHawk.Client.Common.Filters.FinalPresentation)fp["presentation"];
+			if (fPresent == null)
+				return null;
+			
+			// Calculate grid layout: 3 columns x 2 rows in bottom half of screen
+			// This matches the layout in DrawSaveSlotGrid
+			var gridCols = 3;
+			var gridRows = 2;
+			var startY = panelSize.Height / 2;
+			var gridHeight = panelSize.Height / 2;
+			var gridWidth = panelSize.Width;
+			var padding = 10;
+			var cellWidth = (gridWidth - padding * (gridCols + 1)) / gridCols;
+			var cellHeight = (gridHeight - padding * (gridRows + 1)) / gridRows;
+			
+			// Check which cell the mouse is over
+			var relativeY = mousePos.Y - startY;
+			var relativeX = mousePos.X;
+			
+			// Calculate column and row
+			var col = (int)((relativeX - padding) / (cellWidth + padding));
+			var row = (int)((relativeY - padding) / (cellHeight + padding));
+			
+			// Validate bounds
+			if (col >= 0 && col < gridCols && row >= 0 && row < gridRows)
+			{
+				var slotIndex = row * gridCols + col; // 0-5
+				if (slotIndex >= 0 && slotIndex < 6)
+				{
+					// Check if mouse is actually within the cell bounds
+					var cellX = padding + col * (cellWidth + padding);
+					var cellY = padding + row * (cellHeight + padding);
+					
+					if (relativeX >= cellX && relativeX < cellX + cellWidth &&
+					    relativeY >= cellY && relativeY < cellY + cellHeight)
+					{
+						return slotIndex;
+					}
+				}
+			}
+			
+			return null;
+		}
+
+		private void UpdateHighlightFromMouse(DisplayManager dm)
+		{
+			var slotIndex = GetSlotFromMousePosition(dm);
+			if (slotIndex.HasValue)
+			{
+				dm.UpdateSelectedSlot(slotIndex.Value);
+			}
+		}
+
+		private bool _lastMouseLeftButtonState = false;
+
+		private void HandleSaveSlotClick(DisplayManager dm)
+		{
+			var slotIndex = GetSlotFromMousePosition(dm);
+			if (!slotIndex.HasValue)
+			{
+				_lastMouseLeftButtonState = false;
+				return;
+			}
+
+			// Check if left mouse button is pressed
+			var mouseButtons = Control.MouseButtons;
+			var leftButtonPressed = (mouseButtons & MouseButtons.Left) != 0;
+
+			// Only trigger on button press (transition from not pressed to pressed)
+			if (leftButtonPressed && !_lastMouseLeftButtonState)
+			{
+				// Load the save state for this slot (slotIndex is 0-5, but save states are 1-6)
+				var slotNumber = slotIndex.Value + 1;
+				LoadQuickSave(slotNumber);
+			}
+
+			_lastMouseLeftButtonState = leftButtonPressed;
 		}
 
 		public bool BlockFrameAdvance { get; set; }
@@ -5255,3 +5359,4 @@ namespace BizHawk.Client.EmuHawk
 		}
 	}
 }
+
