@@ -1287,35 +1287,51 @@ namespace BizHawk.Client.EmuHawk
 			if (fPresent == null)
 				return null;
 			
-			// Calculate grid layout: 3 columns x 2 rows in bottom half of screen
+			// Calculate grid layout: 4 columns x 1 row at the bottom
 			// This matches the layout in DrawSaveSlotGrid
-			var gridCols = 3;
-			var gridRows = 2;
+			var gridCols = 4;
+			var gridRows = 1;
 			var startY = panelSize.Height / 2;
 			var gridHeight = panelSize.Height / 2;
 			var gridWidth = panelSize.Width;
 			var padding = 10;
+			var buttonHeight = 30; // Height reserved for save button (matches DrawSaveSlotGrid)
 			var cellWidth = (gridWidth - padding * (gridCols + 1)) / gridCols;
-			var cellHeight = (gridHeight - padding * (gridRows + 1)) / gridRows;
+			var cellHeight = (gridHeight - padding * (gridRows + 1) - buttonHeight * gridRows) / gridRows;
 			
 			// Check which cell the mouse is over
 			var relativeY = mousePos.Y - startY;
 			var relativeX = mousePos.X;
 			
-			// Calculate column and row
+			// Calculate column and row (accounting for button height)
 			var col = (int)((relativeX - padding) / (cellWidth + padding));
-			var row = (int)((relativeY - padding) / (cellHeight + padding));
+			var row = (int)((relativeY - padding) / (cellHeight + padding + buttonHeight));
 			
 			// Validate bounds
 			if (col >= 0 && col < gridCols && row >= 0 && row < gridRows)
 			{
-				var slotIndex = row * gridCols + col; // 0-5
-				if (slotIndex >= 0 && slotIndex < 6)
+				var slotIndex = row * gridCols + col; // 0-3
+				if (slotIndex >= 0 && slotIndex < 4)
 				{
-					// Check if mouse is actually within the cell bounds
 					var cellX = padding + col * (cellWidth + padding);
-					var cellY = padding + row * (cellHeight + padding);
+					var cellY = padding + row * (cellHeight + padding + buttonHeight);
 					
+					// Estimate button dimensions: button matches screenshot width (which is at most cellWidth)
+					// Use a generous estimate for button height (typical button aspect ratio ~2:1 to 3:1)
+					// Button is positioned above the screenshot with a 5px gap
+					var estimatedButtonHeight = Math.Min(cellWidth / 2.5f, 50f); // Estimate based on typical aspect ratio, max 50px
+					var buttonY = cellY - estimatedButtonHeight - 5; // Button is above the screenshot
+					
+					// Check if mouse is over the save button (use generous click area)
+					var buttonX = cellX; // Button aligns with cell left edge
+					if (relativeX >= buttonX && relativeX < buttonX + cellWidth &&
+					    relativeY >= buttonY && relativeY < cellY)
+					{
+						// Mouse is over save button, return slot index
+						return slotIndex;
+					}
+					
+					// Check if mouse is over the screenshot
 					if (relativeX >= cellX && relativeX < cellX + cellWidth &&
 					    relativeY >= cellY && relativeY < cellY + cellHeight)
 					{
@@ -1340,26 +1356,117 @@ namespace BizHawk.Client.EmuHawk
 
 		private void HandleSaveSlotClick(DisplayManager dm)
 		{
-			var slotIndex = GetSlotFromMousePosition(dm);
-			if (!slotIndex.HasValue)
+			if (_presentationPanel?.Control == null || Game.IsNullInstance())
 			{
 				_lastMouseLeftButtonState = false;
 				return;
 			}
 
-			// Check if left mouse button is pressed
-			var mouseButtons = Control.MouseButtons;
-			var leftButtonPressed = (mouseButtons & MouseButtons.Left) != 0;
-
-			// Only trigger on button press (transition from not pressed to pressed)
-			if (leftButtonPressed && !_lastMouseLeftButtonState)
+			// Get mouse position relative to the presentation panel
+			var mousePos = _presentationPanel.Control.PointToClient(Control.MousePosition);
+			var panelSize = _presentationPanel.Control.Size;
+			
+			// Only check if mouse is in the bottom half (where save slots are displayed)
+			if (mousePos.Y < panelSize.Height / 2)
 			{
-				// Load the save state for this slot (slotIndex is 0-5, but save states are 1-6)
-				var slotNumber = slotIndex.Value + 1;
-				LoadQuickSave(slotNumber);
+				_lastMouseLeftButtonState = false;
+				return;
 			}
 
-			_lastMouseLeftButtonState = leftButtonPressed;
+			// Get current filter program to access the grid layout
+			if (dm.GetCurrentFilterProgram() is not BizHawk.Client.Common.Filters.FilterProgram fp)
+			{
+				_lastMouseLeftButtonState = false;
+				return;
+			}
+
+			var fPresent = (BizHawk.Client.Common.Filters.FinalPresentation)fp["presentation"];
+			if (fPresent == null)
+			{
+				_lastMouseLeftButtonState = false;
+				return;
+			}
+
+			// Calculate grid layout: 4 columns x 1 row at the bottom
+			var gridCols = 4;
+			var gridRows = 1;
+			var startY = panelSize.Height / 2;
+			var gridHeight = panelSize.Height / 2;
+			var gridWidth = panelSize.Width;
+			var padding = 10;
+			var buttonHeight = 30; // Height reserved for save button
+			var cellWidth = (gridWidth - padding * (gridCols + 1)) / gridCols;
+			var cellHeight = (gridHeight - padding * (gridRows + 1) - buttonHeight * gridRows) / gridRows;
+
+			// Check which cell the mouse is over
+			var relativeY = mousePos.Y - startY;
+			var relativeX = mousePos.X;
+
+			// Calculate column and row
+			var col = (int)((relativeX - padding) / (cellWidth + padding));
+			var row = (int)((relativeY - padding) / (cellHeight + padding + buttonHeight));
+
+			// Check if mouse is actually within the cell bounds
+			if (col >= 0 && col < gridCols && row >= 0 && row < gridRows)
+			{
+				var slotIndex = row * gridCols + col; // 0-3
+				if (slotIndex >= 0 && slotIndex < 4)
+				{
+					var cellX = padding + col * (cellWidth + padding);
+					var cellY = padding + row * (cellHeight + padding + buttonHeight);
+					
+					// Estimate button dimensions: button matches screenshot width (which is at most cellWidth)
+					// Use a generous estimate for button height (typical button aspect ratio ~2:1 to 3:1)
+					// Button is positioned above the screenshot with a 5px gap
+					var estimatedButtonWidth = cellWidth; // Button matches screenshot width
+					var estimatedButtonHeight = Math.Min(cellWidth / 2.5f, 50f); // Estimate based on typical aspect ratio, max 50px
+					var buttonY = cellY - estimatedButtonHeight - 5; // Button is above the screenshot
+
+					// Get current mouse button state
+					var mouseButtons = Control.MouseButtons;
+					var leftButtonPressed = (mouseButtons & MouseButtons.Left) != 0;
+
+					// Check if mouse is over the save button (use generous click area)
+					var buttonX = cellX; // Button aligns with cell left edge (screenshot is centered, but button uses full width)
+					if (relativeX >= buttonX && relativeX < buttonX + cellWidth &&
+					    relativeY >= buttonY && relativeY < cellY)
+					{
+						// Only trigger on button press (transition from not pressed to pressed)
+						if (leftButtonPressed && !_lastMouseLeftButtonState)
+						{
+							// Save to this slot (slotIndex is 0-3, but save states are 1-4)
+							var slotNumber = slotIndex + 1;
+							SaveQuickSave(slotNumber);
+						}
+
+						_lastMouseLeftButtonState = leftButtonPressed;
+						return;
+					}
+
+					// Check if mouse is over the screenshot (load functionality)
+					if (relativeX >= cellX && relativeX < cellX + cellWidth &&
+					    relativeY >= cellY && relativeY < cellY + cellHeight)
+					{
+						// Only trigger on button press (transition from not pressed to pressed)
+						if (leftButtonPressed && !_lastMouseLeftButtonState)
+						{
+							// Load the save state for this slot (slotIndex is 0-3, but save states are 1-4)
+							var slotNumber = slotIndex + 1;
+							LoadQuickSave(slotNumber);
+						}
+
+						_lastMouseLeftButtonState = leftButtonPressed;
+						return;
+					}
+				}
+			}
+
+			// Reset button state only when mouse is not over any slot
+			// This prevents missing clicks when moving between slots
+			if (!Control.MouseButtons.HasFlag(MouseButtons.Left))
+			{
+				_lastMouseLeftButtonState = false;
+			}
 		}
 
 		public bool BlockFrameAdvance { get; set; }

@@ -1,11 +1,13 @@
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 
 using BizHawk.Bizware.Graphics;
 using BizHawk.Bizware.Graphics.Controls;
 using BizHawk.Client.Common;
 using BizHawk.Client.Common.Filters;
 using BizHawk.Common;
+using BizHawk.Common.PathExtensions;
 using BizHawk.Emulation.Common;
 
 namespace BizHawk.Client.EmuHawk
@@ -191,6 +193,21 @@ namespace BizHawk.Client.EmuHawk
 			fPresent.SaveStateDirectory = _lastKnownSaveStateDirectory;
 			// Set highlight image path
 			fPresent.HighlightImagePath = _lastKnownHighlightImagePath;
+			// Set save button image path (look for "savebutton.png" in save state directory or exe directory)
+			if (!string.IsNullOrEmpty(_lastKnownSaveStateDirectory))
+			{
+				var saveButtonPath = Path.Combine(_lastKnownSaveStateDirectory, "savebutton.png");
+				if (!File.Exists(saveButtonPath))
+				{
+					saveButtonPath = Path.Combine(PathUtils.ExeDirectoryPath, "savebutton.png");
+				}
+				fPresent.SaveButtonImagePath = File.Exists(saveButtonPath) ? saveButtonPath : null;
+			}
+			else
+			{
+				var saveButtonPath = Path.Combine(PathUtils.ExeDirectoryPath, "savebutton.png");
+				fPresent.SaveButtonImagePath = File.Exists(saveButtonPath) ? saveButtonPath : null;
+			}
 		}
 
 		public void UpdateSelectedSlot(int slot)
@@ -200,8 +217,8 @@ namespace BizHawk.Client.EmuHawk
 				var fPresent = (FinalPresentation)_currentFilterProgram["presentation"];
 				if (fPresent != null)
 				{
-					// Clamp to valid range 0-5
-					fPresent.SelectedSlot = Math.Max(0, Math.Min(5, slot));
+					// Clamp to valid range 0-3
+					fPresent.SelectedSlot = Math.Max(0, Math.Min(3, slot));
 				}
 			}
 		}

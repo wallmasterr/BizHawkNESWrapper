@@ -293,12 +293,14 @@ namespace BizHawk.Client.Common.Filters
 		public bool IsPaused;
 		public string? SaveStateDirectory;
 		public string? HighlightImagePath;
-		public int SelectedSlot; // 0-5, starting at 0 (first slot)
+		public string? SaveButtonImagePath; // New property for save button image
+		public int SelectedSlot; // 0-3, starting at 0 (first slot)
 		private bool Nop;
 		private LetterboxingLogic LL;
 		private ITexture2D? _whiteTexture;
 		private ITexture2D?[]? _saveSlotTextures;
 		private ITexture2D? _highlightTexture;
+		private ITexture2D? _saveButtonTexture; // New field for save button texture
 
 		public bool Config_FixAspectRatio, Config_FixScaleInteger, Config_PadOnly;
 
@@ -313,6 +315,9 @@ namespace BizHawk.Client.Common.Filters
 			Nop = false;
 			// Clean up white texture if it exists (filter is being re-initialized)
 			CleanupWhiteTexture();
+			ClearSaveSlotTextures(); // Clear save slot textures on re-initialization
+			ClearHighlightTexture(); // Clear highlight texture on re-initialization
+			ClearSaveButtonTexture(); // Clear save button texture on re-initialization
 			// Reset selected slot to first slot when initialized
 			SelectedSlot = 0;
 		}
@@ -484,7 +489,8 @@ namespace BizHawk.Client.Common.Filters
 				
 				// Load and draw save slot images in a 3x2 grid in the bottom half
 				LoadSaveSlotTextures();
-				LoadHighlightTexture();
+				LoadHighlightTexture(); // Load highlight texture
+				LoadSaveButtonTexture(); // Load save button texture
 				DrawSaveSlotGrid();
 				
 				FilterProgram.GuiRenderer.DisableBlending();
@@ -512,11 +518,11 @@ namespace BizHawk.Client.Common.Filters
 			// Initialize array if needed
 			if (_saveSlotTextures == null)
 			{
-				_saveSlotTextures = new ITexture2D?[6];
+				_saveSlotTextures = new ITexture2D?[4];
 			}
 
-			// Load screenshots for slots 1-6
-			for (int slot = 1; slot <= 6; slot++)
+			// Load screenshots for slots 1-4
+			for (int slot = 1; slot <= 4; slot++)
 			{
 				var slotIndex = slot - 1;
 				
@@ -541,42 +547,44 @@ namespace BizHawk.Client.Common.Filters
 			}
 		}
 
-		private void DrawSaveSlotGrid()
-		{
-			if (_saveSlotTextures == null)
-				return;
-
-			// Calculate grid layout: 3 columns x 2 rows in bottom half of screen
-			var gridCols = 3;
-			var gridRows = 2;
-			var totalSlots = gridCols * gridRows;
-			
-			// Bottom half of screen
-			var startY = OutputSize.Height / 2;
-			var gridHeight = OutputSize.Height / 2;
-			var gridWidth = OutputSize.Width;
-			
-			// Calculate cell dimensions with padding
-			var padding = 10;
-			var cellWidth = (gridWidth - padding * (gridCols + 1)) / gridCols;
-			var cellHeight = (gridHeight - padding * (gridRows + 1)) / gridRows;
-			
-			// Draw each slot
-			for (int slot = 1; slot <= totalSlots; slot++)
+			private void DrawSaveSlotGrid()
 			{
-				var slotIndex = slot - 1;
-				var texture = _saveSlotTextures[slotIndex];
-				if (texture == null)
-					continue;
+				if (_saveSlotTextures == null)
+					return;
 
-				// Calculate position in grid (0-indexed)
-				var col = (slot - 1) % gridCols;
-				var row = (slot - 1) / gridCols;
+			// Calculate grid layout: 4 columns x 1 row at the bottom
+			var gridCols = 4;
+			var gridRows = 1;
+			var totalSlots = gridCols * gridRows;
 				
+				// Bottom half of screen
+				var startY = OutputSize.Height / 2;
+				var gridHeight = OutputSize.Height / 2;
+				var gridWidth = OutputSize.Width;
+				
+				// Calculate cell dimensions with padding
+				// Added extra vertical space for save button
+				var padding = 10;
+				var buttonHeight = 30; // Height reserved for save button
+				var cellWidth = (gridWidth - padding * (gridCols + 1)) / gridCols;
+				var cellHeight = (gridHeight - padding * (gridRows + 1) - buttonHeight * gridRows) / gridRows;
+			
+				// Draw each slot
+				for (int slot = 1; slot <= totalSlots; slot++)
+				{
+					var slotIndex = slot - 1;
+					var texture = _saveSlotTextures[slotIndex];
+					if (texture == null)
+						continue;
+
+					// Calculate position in grid (0-indexed)
+					var col = (slot - 1) % gridCols;
+					var row = (slot - 1) / gridCols;
+					
 				var x = padding + col * (cellWidth + padding);
-				var y = startY + padding + row * (cellHeight + padding);
+				var y = startY + padding + row * (cellHeight + padding + buttonHeight);
 				
-				// Draw the texture, maintaining aspect ratio
+				// Calculate screenshot dimensions with aspect ratio
 				var texAspect = (float)texture.Width / texture.Height;
 				var cellAspect = (float)cellWidth / cellHeight;
 				
@@ -598,6 +606,20 @@ namespace BizHawk.Client.Common.Filters
 				var offsetX = (cellWidth - drawWidth) / 2;
 				var offsetY = (cellHeight - drawHeight) / 2;
 				
+				// Draw save button above the screenshot, matching the screenshot width
+				if (_saveButtonTexture != null)
+				{
+					// Calculate button dimensions to match screenshot width, maintaining button's aspect ratio
+					var buttonAspect = (float)_saveButtonTexture.Width / _saveButtonTexture.Height;
+					var buttonWidth = drawWidth; // Match screenshot width
+					var buttonHeightScaled = buttonWidth / buttonAspect; // Maintain button's aspect ratio
+					var buttonY = y + offsetY - buttonHeightScaled - 5; // 5px gap between button and screenshot
+					var buttonX = x + offsetX; // Align with screenshot
+					
+					FilterProgram.GuiRenderer.SetModulateColorWhite();
+					FilterProgram.GuiRenderer.Draw(_saveButtonTexture, buttonX, buttonY, buttonWidth, buttonHeightScaled);
+				}
+				
 				FilterProgram.GuiRenderer.SetModulateColorWhite();
 				FilterProgram.GuiRenderer.Draw(texture, x + offsetX, y + offsetY, drawWidth, drawHeight);
 			}
@@ -613,7 +635,7 @@ namespace BizHawk.Client.Common.Filters
 					var row = (slot - 1) / gridCols;
 					
 					var x = padding + col * (cellWidth + padding);
-					var y = startY + padding + row * (cellHeight + padding);
+					var y = startY + padding + row * (cellHeight + padding + buttonHeight);
 					
 					// Apply same scaling as screenshots - maintain aspect ratio
 					var highlightAspect = (float)_highlightTexture.Width / _highlightTexture.Height;
@@ -680,6 +702,68 @@ namespace BizHawk.Client.Common.Filters
 				// Failed to load, leave as null
 				_lastHighlightImagePath = null;
 			}
+		}
+
+		private string? _lastSaveButtonImagePath;
+		private void LoadSaveButtonTexture()
+		{
+			if (string.IsNullOrEmpty(SaveButtonImagePath) || !File.Exists(SaveButtonImagePath))
+			{
+				_saveButtonTexture?.Dispose();
+				_saveButtonTexture = null;
+				_lastSaveButtonImagePath = null;
+				return;
+			}
+
+			// Reload if path changed
+			if (_saveButtonTexture != null && _lastSaveButtonImagePath == SaveButtonImagePath)
+				return;
+
+			// Dispose old texture if path changed
+			if (_lastSaveButtonImagePath != SaveButtonImagePath)
+			{
+				_saveButtonTexture?.Dispose();
+				_saveButtonTexture = null;
+			}
+
+			try
+			{
+				using var bitmap = new System.Drawing.Bitmap(SaveButtonImagePath);
+				using var bb = new BitmapBuffer(bitmap, new BitmapLoadOptions());
+				_saveButtonTexture = FilterProgram.GL.LoadTexture(bb);
+				_lastSaveButtonImagePath = SaveButtonImagePath;
+			}
+			catch
+			{
+				// Failed to load, leave as null
+				_lastSaveButtonImagePath = null;
+			}
+		}
+
+		private void ClearSaveButtonTexture()
+		{
+			_saveButtonTexture?.Dispose();
+			_saveButtonTexture = null;
+			_lastSaveButtonImagePath = null;
+		}
+
+		private void ClearSaveSlotTextures()
+		{
+			if (_saveSlotTextures != null)
+			{
+				foreach (var texture in _saveSlotTextures)
+				{
+					texture?.Dispose();
+				}
+				_saveSlotTextures = null;
+			}
+		}
+
+		private void ClearHighlightTexture()
+		{
+			_highlightTexture?.Dispose();
+			_highlightTexture = null;
+			_lastHighlightImagePath = null;
 		}
 	}
 
