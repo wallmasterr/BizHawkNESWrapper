@@ -745,6 +745,41 @@ namespace BizHawk.Client.EmuHawk
 									// Hide status bar if requested in autoload config
 									MainStatusBar.Visible = false;
 								}
+
+								// Load background image if specified
+								if (!string.IsNullOrEmpty(_autoloadConfig.BackgroundImagePath))
+								{
+									try
+									{
+										var bgImagePath = Path.IsPathRooted(_autoloadConfig.BackgroundImagePath)
+											? _autoloadConfig.BackgroundImagePath
+											: Path.Combine(PathUtils.ExeDirectoryPath, _autoloadConfig.BackgroundImagePath);
+										
+										if (File.Exists(bgImagePath))
+										{
+											try
+											{
+												using var bitmap = new Bitmap(bgImagePath);
+												var bb = new BitmapBuffer(bitmap, new BitmapLoadOptions());
+												_backgroundImageTexture = GL.LoadTexture(bb);
+												DisplayManager.BackgroundImageTexture = _backgroundImageTexture;
+												Util.DebugWriteLine($"Background image loaded: {bgImagePath} ({bitmap.Width}x{bitmap.Height})");
+											}
+											catch (Exception ex)
+											{
+												Util.DebugWriteLine($"Failed to create texture from background image: {ex.Message}");
+											}
+										}
+										else
+										{
+											Util.DebugWriteLine($"Background image file not found: {bgImagePath}");
+										}
+									}
+									catch (Exception ex)
+									{
+										Util.DebugWriteLine($"Failed to load background image: {ex.Message}");
+									}
+								}
 							}
 							else if (!Game.IsNullInstance())
 							{
@@ -1098,6 +1133,8 @@ namespace BizHawk.Client.EmuHawk
 		protected override void Dispose(bool disposing)
 		{
 			// NOTE: this gets called twice sometimes. once by using() in Program.cs and once from winforms internals when the form is closed...
+			_backgroundImageTexture?.Dispose();
+			_backgroundImageTexture = null;
 			DisplayManager?.Dispose();
 			DisplayManager = null;
 
@@ -1834,6 +1871,8 @@ namespace BizHawk.Client.EmuHawk
 		private Bitmap _linkCableOff;
 
 		private readonly PresentationPanel _presentationPanel;
+
+		private ITexture2D _backgroundImageTexture;
 
 		// countdown for saveram autoflushing
 		public int AutoFlushSaveRamIn { get; set; }

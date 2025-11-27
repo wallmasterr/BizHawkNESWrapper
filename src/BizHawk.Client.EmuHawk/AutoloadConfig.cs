@@ -24,6 +24,12 @@ namespace BizHawk.Client.EmuHawk
 		/// Whether to hide the status bar when auto-loading
 		/// </summary>
 		public bool HideStatusBar { get; set; } = false;
+
+		/// <summary>
+		/// Path to background image file (relative to EmuHawk.exe directory or absolute path)
+		/// If empty, no background image will be used
+		/// </summary>
+		public string BackgroundImagePath { get; set; } = string.Empty;
 	}
 }
 

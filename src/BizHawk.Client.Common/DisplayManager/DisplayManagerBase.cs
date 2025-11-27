@@ -49,6 +49,11 @@ namespace BizHawk.Client.Common
 
 		private IEmulator GlobalEmulator;
 
+		/// <summary>
+		/// Background image texture to render behind the game
+		/// </summary>
+		public ITexture2D BackgroundImageTexture { get; set; }
+
 		protected DisplayManagerBase(
 			Config config,
 			IEmulator emulator,
@@ -180,7 +185,7 @@ namespace BizHawk.Client.Common
 			}
 		}
 
-		private readonly IGuiRenderer _renderer;
+		protected readonly IGuiRenderer _renderer;
 
 		// layer resources
 		protected FilterProgram _currentFilterProgram;
@@ -848,6 +853,7 @@ namespace BizHawk.Client.Common
 				fPresent.Config_FixAspectRatio = GlobalConfig.DispFixAspectRatio;
 				fPresent.Config_FixScaleInteger = GlobalConfig.DispFixScaleInteger;
 				fPresent.Padding = (ClientExtraPadding.Left, ClientExtraPadding.Top, ClientExtraPadding.Right, ClientExtraPadding.Bottom);
+				ConfigureFinalPresentation(fPresent);
 			}
 
 			filterProgram.Compile("default", chainInsize, chainOutsize, !job.Offscreen);
@@ -875,6 +881,11 @@ namespace BizHawk.Client.Common
 			SwapBuffersOfGraphicsControl();
 		}
 
+		protected virtual void ConfigureFinalPresentation(FinalPresentation fPresent)
+		{
+			// Override in derived classes to configure FinalPresentation
+		}
+
 		protected virtual void UpdateSourceDrawingWork(JobInfo job)
 		{
 			if (!job.Offscreen) throw new InvalidOperationException();
@@ -890,7 +901,7 @@ namespace BizHawk.Client.Common
 			job.OffscreenBb.DiscardAlpha();
 		}
 
-		protected void RunFilterChainSteps(ref int rtCounter, out IRenderTarget rtCurr, out bool inFinalTarget)
+		protected virtual void RunFilterChainSteps(ref int rtCounter, out IRenderTarget rtCurr, out bool inFinalTarget)
 		{
 			ITexture2D texCurr = null;
 			rtCurr = null;

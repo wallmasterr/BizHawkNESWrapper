@@ -4,6 +4,7 @@ using System.Drawing;
 using BizHawk.Bizware.Graphics;
 using BizHawk.Bizware.Graphics.Controls;
 using BizHawk.Client.Common;
+using BizHawk.Client.Common.Filters;
 using BizHawk.Common;
 using BizHawk.Emulation.Common;
 
@@ -81,6 +82,39 @@ namespace BizHawk.Client.EmuHawk
 
 		protected override void SwapBuffersOfGraphicsControl() => _graphicsControl.SwapBuffers();
 
+		protected override void RunFilterChainSteps(ref int rtCounter, out IRenderTarget rtCurr, out bool inFinalTarget)
+		{
+			ITexture2D texCurr = null;
+			rtCurr = null;
+			inFinalTarget = false;
+			foreach (var step in _currentFilterProgram.Program) switch (step.Type)
+			{
+				case FilterProgram.ProgramStepType.Run:
+					var f = _currentFilterProgram.Filters[(int) step.Args];
+					f.SetInput(texCurr);
+					f.Run();
+					if (f.FindOutput() is { SurfaceDisposition: SurfaceDisposition.Texture })
+					{
+						texCurr = f.GetOutput();
+						rtCurr = null;
+					}
+					break;
+				case FilterProgram.ProgramStepType.NewTarget:
+					_currentFilterProgram.CurrRenderTarget = rtCurr = _shaderChainFrugalizers[rtCounter++].Get((Size) step.Args);
+					rtCurr.Bind();
+					break;
+				case FilterProgram.ProgramStepType.FinalTarget:
+					_currentFilterProgram.CurrRenderTarget = rtCurr = null;
+					_gl.BindDefaultRenderTarget();
+					inFinalTarget = true;
+					// Background image is now handled by FinalPresentation filter
+					_gl.ClearColor(Color.Black);
+					break;
+				default:
+					throw new InvalidOperationException();
+			}
+		}
+
 		protected override void UpdateSourceDrawingWork(JobInfo job)
 		{
 			if (!job.Offscreen)
@@ -137,6 +171,16 @@ namespace BizHawk.Client.EmuHawk
 
 			// nope. don't do this. workaround for slow context switching on intel GPUs. just switch to another context when necessary before doing anything
 			// _graphicsControl.End();
+		}
+
+		protected override void ConfigureFinalPresentation(FinalPresentation fPresent)
+		{
+			base.ConfigureFinalPresentation(fPresent);
+			// Set the background image texture if available
+			if (BackgroundImageTexture != null)
+			{
+				fPresent.BackgroundImageTexture = BackgroundImageTexture;
+			}
 		}
 	}
 }

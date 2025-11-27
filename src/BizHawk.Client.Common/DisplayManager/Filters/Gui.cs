@@ -287,6 +287,7 @@ namespace BizHawk.Client.Common.Filters
 		private Size OutputSize, InputSize;
 		public Size TextureSize, VirtualTextureSize;
 		public int BackgroundColor;
+		public ITexture2D? BackgroundImageTexture;
 		private bool Nop;
 		private LetterboxingLogic LL;
 
@@ -416,7 +417,20 @@ namespace BizHawk.Client.Common.Filters
 				return;
 			}
 
-			FilterProgram.GL.ClearColor(Color.FromArgb(BackgroundColor));
+			// Draw background image instead of clearing with black if available
+			if (BackgroundImageTexture != null)
+			{
+				FilterProgram.GL.ClearColor(Color.Black);
+				FilterProgram.GuiRenderer.Begin(OutputSize.Width, OutputSize.Height);
+				FilterProgram.GuiRenderer.SetModulateColorWhite();
+				FilterProgram.GuiRenderer.DisableBlending();
+				FilterProgram.GuiRenderer.Draw(BackgroundImageTexture, 0, 0, OutputSize.Width, OutputSize.Height);
+				FilterProgram.GuiRenderer.End();
+			}
+			else
+			{
+				FilterProgram.GL.ClearColor(Color.FromArgb(BackgroundColor));
+			}
 
 			FilterProgram.GuiRenderer.Begin(OutputSize.Width, OutputSize.Height);
 			FilterProgram.GuiRenderer.DisableBlending();
