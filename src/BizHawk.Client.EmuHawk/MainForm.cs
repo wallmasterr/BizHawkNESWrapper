@@ -707,9 +707,50 @@ namespace BizHawk.Client.EmuHawk
 					ShowMessageBox(owner: null, $"Failed to load {_argParser.cmdRom} specified on commandline");
 				}
 			}
-			else if (Config.RecentRoms.AutoLoad && !Config.RecentRoms.Empty)
+			else
 			{
-				LoadMostRecentROM();
+				// Check for autoload.json file
+				var autoloadPath = Path.Combine(PathUtils.ExeDirectoryPath, "autoload.json");
+				if (File.Exists(autoloadPath))
+				{
+					try
+					{
+						var autoloadConfig = ConfigService.Load<AutoloadConfig>(autoloadPath);
+						if (autoloadConfig.Enabled && !string.IsNullOrEmpty(autoloadConfig.RomPath))
+						{
+							// Resolve path - if relative, make it relative to exe directory
+							var romPath = Path.IsPathRooted(autoloadConfig.RomPath)
+								? autoloadConfig.RomPath
+								: Path.Combine(PathUtils.ExeDirectoryPath, autoloadConfig.RomPath);
+							
+							if (File.Exists(romPath))
+							{
+								var ioa = OpenAdvancedSerializer.ParseWithLegacy(romPath);
+								_ = LoadRom(ioa.SimplePath, new LoadRomArgs(ioa));
+								if (Game.IsNullInstance())
+								{
+									ShowMessageBox(owner: null, $"Failed to auto-load ROM from autoload.json: {autoloadConfig.RomPath}");
+								}
+							}
+							else if (!Game.IsNullInstance())
+							{
+								// Only show error if we didn't already load something
+								ShowMessageBox(owner: null, $"Auto-load ROM file not found: {romPath}");
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						// Silently fail if autoload.json is malformed - don't interrupt startup
+						Util.DebugWriteLine($"Failed to load autoload.json: {ex.Message}");
+					}
+				}
+				
+				// If autoload didn't load anything, fall back to recent ROMs
+				if (Game.IsNullInstance() && Config.RecentRoms.AutoLoad && !Config.RecentRoms.Empty)
+				{
+					LoadMostRecentROM();
+				}
 			}
 
 			Config.VideoWriterAudioSyncEffective = _argParser.audiosync ?? Config.VideoWriterAudioSync;
