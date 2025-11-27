@@ -173,6 +173,8 @@ namespace BizHawk.Client.EmuHawk
 			// _graphicsControl.End();
 		}
 
+		private bool _lastKnownPauseState;
+
 		protected override void ConfigureFinalPresentation(FinalPresentation fPresent)
 		{
 			base.ConfigureFinalPresentation(fPresent);
@@ -180,6 +182,21 @@ namespace BizHawk.Client.EmuHawk
 			if (BackgroundImageTexture != null)
 			{
 				fPresent.BackgroundImageTexture = BackgroundImageTexture;
+			}
+			// Set initial pause state
+			fPresent.IsPaused = _lastKnownPauseState;
+		}
+
+		public void UpdatePauseState(bool isPaused)
+		{
+			_lastKnownPauseState = isPaused;
+			if (_currentFilterProgram != null)
+			{
+				var fPresent = (FinalPresentation)_currentFilterProgram["presentation"];
+				if (fPresent != null)
+				{
+					fPresent.IsPaused = isPaused;
+				}
 			}
 		}
 	}

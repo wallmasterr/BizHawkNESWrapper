@@ -1181,6 +1181,12 @@ namespace BizHawk.Client.EmuHawk
 
 				if (value != _emulatorPaused) Tools.OnPauseToggle(value);
 				_emulatorPaused = value;
+				
+				// Update pause overlay in display manager
+				if (DisplayManager is DisplayManager dm)
+				{
+					dm.UpdatePauseState(value);
+				}
 			}
 		}
 

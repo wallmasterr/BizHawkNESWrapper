@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Numerics;
 
 using BizHawk.Bizware.Graphics;
+using BizHawk.Common;
 using BizHawk.Emulation.Common;
 using BizHawk.Emulation.Cores.Consoles.Nintendo.N3DS;
 using BizHawk.Emulation.Cores.Consoles.Nintendo.NDS;
@@ -288,8 +289,10 @@ namespace BizHawk.Client.Common.Filters
 		public Size TextureSize, VirtualTextureSize;
 		public int BackgroundColor;
 		public ITexture2D? BackgroundImageTexture;
+		public bool IsPaused;
 		private bool Nop;
 		private LetterboxingLogic LL;
+		private ITexture2D? _whiteTexture;
 
 		public bool Config_FixAspectRatio, Config_FixScaleInteger, Config_PadOnly;
 
@@ -302,6 +305,8 @@ namespace BizHawk.Client.Common.Filters
 		{
 			DeclareInput();
 			Nop = false;
+			// Clean up white texture if it exists (filter is being re-initialized)
+			CleanupWhiteTexture();
 		}
 
 		public override Size PresizeOutput(string channel, Size size)
@@ -450,7 +455,36 @@ namespace BizHawk.Client.Common.Filters
 			}
 
 			FilterProgram.GuiRenderer.Draw(InputTexture, LL.vx, LL.vy, LL.vw, LL.vh);
+			
+			// Draw pause overlay if paused (50% opacity black)
+			if (IsPaused)
+			{
+				// Create white texture if needed
+				if (_whiteTexture == null)
+				{
+					_whiteTexture = FilterProgram.GL.CreateTexture(1, 1);
+					using var bb = new BitmapBuffer(1, 1);
+					bb.Pixels[0] = unchecked((int)0xFFFFFFFF); // White pixel (ARGB)
+					_whiteTexture.LoadFrom(bb);
+				}
+				
+				FilterProgram.GuiRenderer.EnableBlending();
+				FilterProgram.GuiRenderer.SetModulateColor(Color.FromArgb(128, 0, 0, 0)); // 50% opacity black (128/255)
+				// Draw white texture scaled to cover entire output to create dark overlay
+				FilterProgram.GuiRenderer.Draw(_whiteTexture, 0, 0, OutputSize.Width, OutputSize.Height);
+				FilterProgram.GuiRenderer.SetModulateColorWhite();
+				FilterProgram.GuiRenderer.DisableBlending();
+			}
+			
 			FilterProgram.GuiRenderer.End();
+		}
+
+		// Cleanup white texture when filter is no longer needed
+		// Note: BaseFilter doesn't implement IDisposable, so we'll clean up in Initialize if needed
+		private void CleanupWhiteTexture()
+		{
+			_whiteTexture?.Dispose();
+			_whiteTexture = null;
 		}
 	}
 
