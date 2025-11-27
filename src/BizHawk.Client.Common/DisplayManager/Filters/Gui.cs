@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.IO;
 using System.Numerics;
 
 using BizHawk.Bizware.Graphics;
@@ -290,9 +291,11 @@ namespace BizHawk.Client.Common.Filters
 		public int BackgroundColor;
 		public ITexture2D? BackgroundImageTexture;
 		public bool IsPaused;
+		public string? SaveStateDirectory;
 		private bool Nop;
 		private LetterboxingLogic LL;
 		private ITexture2D? _whiteTexture;
+		private ITexture2D?[]? _saveSlotTextures;
 
 		public bool Config_FixAspectRatio, Config_FixScaleInteger, Config_PadOnly;
 
@@ -456,7 +459,7 @@ namespace BizHawk.Client.Common.Filters
 
 			FilterProgram.GuiRenderer.Draw(InputTexture, LL.vx, LL.vy, LL.vw, LL.vh);
 			
-			// Draw pause overlay if paused (50% opacity black)
+			// Draw pause overlay and save slot images if paused
 			if (IsPaused)
 			{
 				// Create white texture if needed
@@ -468,11 +471,16 @@ namespace BizHawk.Client.Common.Filters
 					_whiteTexture.LoadFrom(bb);
 				}
 				
+				// Draw dark overlay
 				FilterProgram.GuiRenderer.EnableBlending();
 				FilterProgram.GuiRenderer.SetModulateColor(Color.FromArgb(128, 0, 0, 0)); // 50% opacity black (128/255)
-				// Draw white texture scaled to cover entire output to create dark overlay
 				FilterProgram.GuiRenderer.Draw(_whiteTexture, 0, 0, OutputSize.Width, OutputSize.Height);
 				FilterProgram.GuiRenderer.SetModulateColorWhite();
+				
+				// Load and draw save slot images in a 3x2 grid in the bottom half
+				LoadSaveSlotTextures();
+				DrawSaveSlotGrid();
+				
 				FilterProgram.GuiRenderer.DisableBlending();
 			}
 			
@@ -485,6 +493,108 @@ namespace BizHawk.Client.Common.Filters
 		{
 			_whiteTexture?.Dispose();
 			_whiteTexture = null;
+		}
+
+		private void LoadSaveSlotTextures()
+		{
+			if (string.IsNullOrEmpty(SaveStateDirectory) || !Directory.Exists(SaveStateDirectory))
+			{
+				_saveSlotTextures = null;
+				return;
+			}
+
+			// Initialize array if needed
+			if (_saveSlotTextures == null)
+			{
+				_saveSlotTextures = new ITexture2D?[6];
+			}
+
+			// Load screenshots for slots 1-6
+			for (int slot = 1; slot <= 6; slot++)
+			{
+				var slotIndex = slot - 1;
+				
+				// Dispose existing texture if any
+				_saveSlotTextures[slotIndex]?.Dispose();
+				_saveSlotTextures[slotIndex] = null;
+
+				var screenshotPath = Path.Combine(SaveStateDirectory, $"{slot}.png");
+				if (File.Exists(screenshotPath))
+				{
+					try
+					{
+						using var bitmap = new System.Drawing.Bitmap(screenshotPath);
+						using var bb = new BitmapBuffer(bitmap, new BitmapLoadOptions());
+						_saveSlotTextures[slotIndex] = FilterProgram.GL.LoadTexture(bb);
+					}
+					catch
+					{
+						// Failed to load, leave as null
+					}
+				}
+			}
+		}
+
+		private void DrawSaveSlotGrid()
+		{
+			if (_saveSlotTextures == null)
+				return;
+
+			// Calculate grid layout: 3 columns x 2 rows in bottom half of screen
+			var gridCols = 3;
+			var gridRows = 2;
+			var totalSlots = gridCols * gridRows;
+			
+			// Bottom half of screen
+			var startY = OutputSize.Height / 2;
+			var gridHeight = OutputSize.Height / 2;
+			var gridWidth = OutputSize.Width;
+			
+			// Calculate cell dimensions with padding
+			var padding = 10;
+			var cellWidth = (gridWidth - padding * (gridCols + 1)) / gridCols;
+			var cellHeight = (gridHeight - padding * (gridRows + 1)) / gridRows;
+			
+			// Draw each slot
+			for (int slot = 1; slot <= totalSlots; slot++)
+			{
+				var slotIndex = slot - 1;
+				var texture = _saveSlotTextures[slotIndex];
+				if (texture == null)
+					continue;
+
+				// Calculate position in grid (0-indexed)
+				var col = (slot - 1) % gridCols;
+				var row = (slot - 1) / gridCols;
+				
+				var x = padding + col * (cellWidth + padding);
+				var y = startY + padding + row * (cellHeight + padding);
+				
+				// Draw the texture, maintaining aspect ratio
+				var texAspect = (float)texture.Width / texture.Height;
+				var cellAspect = (float)cellWidth / cellHeight;
+				
+				float drawWidth, drawHeight;
+				if (texAspect > cellAspect)
+				{
+					// Texture is wider, fit to width
+					drawWidth = cellWidth;
+					drawHeight = cellWidth / texAspect;
+				}
+				else
+				{
+					// Texture is taller, fit to height
+					drawHeight = cellHeight;
+					drawWidth = cellHeight * texAspect;
+				}
+				
+				// Center in cell
+				var offsetX = (cellWidth - drawWidth) / 2;
+				var offsetY = (cellHeight - drawHeight) / 2;
+				
+				FilterProgram.GuiRenderer.SetModulateColorWhite();
+				FilterProgram.GuiRenderer.Draw(texture, x + offsetX, y + offsetY, drawWidth, drawHeight);
+			}
 		}
 	}
 

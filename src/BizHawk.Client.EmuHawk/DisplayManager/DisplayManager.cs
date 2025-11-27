@@ -174,6 +174,7 @@ namespace BizHawk.Client.EmuHawk
 		}
 
 		private bool _lastKnownPauseState;
+		private string? _lastKnownSaveStateDirectory;
 
 		protected override void ConfigureFinalPresentation(FinalPresentation fPresent)
 		{
@@ -185,6 +186,8 @@ namespace BizHawk.Client.EmuHawk
 			}
 			// Set initial pause state
 			fPresent.IsPaused = _lastKnownPauseState;
+			// Set save state directory
+			fPresent.SaveStateDirectory = _lastKnownSaveStateDirectory;
 		}
 
 		public void UpdatePauseState(bool isPaused)
@@ -196,6 +199,24 @@ namespace BizHawk.Client.EmuHawk
 				if (fPresent != null)
 				{
 					fPresent.IsPaused = isPaused;
+				}
+			}
+		}
+
+		public void UpdateSaveStateDirectory(string? saveStateDirectory)
+		{
+			_lastKnownSaveStateDirectory = saveStateDirectory;
+			if (_currentFilterProgram != null)
+			{
+				var fPresent = (FinalPresentation)_currentFilterProgram["presentation"];
+				if (fPresent != null)
+				{
+					fPresent.SaveStateDirectory = saveStateDirectory;
+					// Clear cached textures when directory changes
+					if (fPresent is FinalPresentation fp)
+					{
+						// Force reload on next pause
+					}
 				}
 			}
 		}

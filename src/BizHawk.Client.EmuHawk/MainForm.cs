@@ -1186,6 +1186,14 @@ namespace BizHawk.Client.EmuHawk
 				if (DisplayManager is DisplayManager dm)
 				{
 					dm.UpdatePauseState(value);
+					
+					// Update save state directory when pausing
+					if (value && !Game.IsNullInstance())
+					{
+						var saveStatePrefix = SaveStatePrefix();
+						var saveStateDir = Path.GetDirectoryName(saveStatePrefix);
+						dm.UpdateSaveStateDirectory(saveStateDir);
+					}
 				}
 			}
 		}
