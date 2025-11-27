@@ -80,6 +80,10 @@ namespace BizHawk.Client.EmuHawk
 				case "Pause":
 					TogglePause();
 					break;
+				case "Escape":
+					// Also handle Escape as pause toggle
+					TogglePause();
+					break;
 				case "Frame Inch":
 					//special! allow this key to get handled as Frame Advance, too
 					FrameInch = true;

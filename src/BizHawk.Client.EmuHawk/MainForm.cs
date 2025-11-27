@@ -1014,6 +1014,21 @@ namespace BizHawk.Client.EmuHawk
 
 				InputManager.ProcessInput(Input.Instance, CheckHotkey, Config, (ie, handled) =>
 				{
+					// Handle Escape key and left bumper for pause toggle (same as Emulation > Pause menu)
+					if (ie.EventType is InputEventType.Press)
+					{
+						var button = ie.LogicalButton.Button;
+						// Check for Escape (case-insensitive) and various left bumper names
+						if (string.Equals(button, "Escape", StringComparison.OrdinalIgnoreCase) ||
+						    string.Equals(button, "Esc", StringComparison.OrdinalIgnoreCase) ||
+						    button == "L1" || button == "LB" || button == "Left Bumper" || 
+						    button == "LeftShoulder" || button == "Left Shoulder")
+						{
+							TogglePause();
+							return;
+						}
+					}
+
 					if (ActiveForm is not FormBase afb) return;
 
 					// Alt key for menu items.
