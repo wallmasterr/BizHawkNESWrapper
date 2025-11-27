@@ -19,6 +19,11 @@ namespace BizHawk.Client.EmuHawk
 		/// Whether to start in fullscreen mode when auto-loading
 		/// </summary>
 		public bool Fullscreen { get; set; } = false;
+
+		/// <summary>
+		/// Whether to hide the status bar when auto-loading
+		/// </summary>
+		public bool HideStatusBar { get; set; } = false;
 	}
 }
 

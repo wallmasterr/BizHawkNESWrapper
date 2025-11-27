@@ -238,7 +238,16 @@ namespace BizHawk.Client.EmuHawk
 			if (Config.FirstBoot)
 			{
 				ProfileFirstBootLabel.Visible = true;
-				AddOnScreenMessage("Click the blue silhouette below for onboarding", duration: 30);
+				// Only show onboarding message if autoload is not hiding UI elements
+				if (_autoloadConfig == null || !_autoloadConfig.Enabled || !_autoloadConfig.HideStatusBar)
+				{
+					AddOnScreenMessage("Click the blue silhouette below for onboarding", duration: 30);
+				}
+				// Hide the profile first boot label if autoload is hiding UI
+				if (_autoloadConfig != null && _autoloadConfig.Enabled && _autoloadConfig.HideStatusBar)
+				{
+					ProfileFirstBootLabel.Visible = false;
+				}
 			}
 
 			HandleToggleLightAndLink();
@@ -730,6 +739,11 @@ namespace BizHawk.Client.EmuHawk
 								if (Game.IsNullInstance())
 								{
 									ShowMessageBox(owner: null, $"Failed to auto-load ROM from autoload.json: {_autoloadConfig.RomPath}");
+								}
+								else if (_autoloadConfig.HideStatusBar)
+								{
+									// Hide status bar if requested in autoload config
+									MainStatusBar.Visible = false;
 								}
 							}
 							else if (!Game.IsNullInstance())
@@ -1339,7 +1353,11 @@ namespace BizHawk.Client.EmuHawk
 					: new Zwinder(Emulator.AsStatable(), Config.Rewind)
 				: null;
 			UpdateStatusBarRewindIndicator();
-			AddOnScreenMessage(Rewinder?.Active == true ? "Rewind started" : "Rewind disabled");
+			// Only show rewind message if autoload is not hiding UI elements
+			if (_autoloadConfig == null || !_autoloadConfig.Enabled || !_autoloadConfig.HideStatusBar)
+			{
+				AddOnScreenMessage(Rewinder?.Active == true ? "Rewind started" : "Rewind disabled");
+			}
 		}
 
 		public FirmwareManager FirmwareManager { get; }
@@ -1541,11 +1559,27 @@ namespace BizHawk.Client.EmuHawk
 				// TODO - maybe apply a hack tracked during fullscreen here to override it
 				FormBorderStyle = FormBorderStyle.None;
 				MainMenuStrip.Visible = Config.DispChromeMenuFullscreen && !_argParser._chromeless;
-				MainStatusBar.Visible = Config.DispChromeStatusBarFullscreen && !_argParser._chromeless;
+				// Check autoload config for status bar visibility
+				if (_autoloadConfig != null && _autoloadConfig.Enabled && _autoloadConfig.HideStatusBar)
+				{
+					MainStatusBar.Visible = false;
+				}
+				else
+				{
+					MainStatusBar.Visible = Config.DispChromeStatusBarFullscreen && !_argParser._chromeless;
+				}
 			}
 			else
 			{
-				MainStatusBar.Visible = Config.DispChromeStatusBarWindowed && !_argParser._chromeless;
+				// Check autoload config for status bar visibility
+				if (_autoloadConfig != null && _autoloadConfig.Enabled && _autoloadConfig.HideStatusBar)
+				{
+					MainStatusBar.Visible = false;
+				}
+				else
+				{
+					MainStatusBar.Visible = Config.DispChromeStatusBarWindowed && !_argParser._chromeless;
+				}
 				MainMenuStrip.Visible = Config.DispChromeMenuWindowed && !_argParser._chromeless;
 				MaximizeBox = MinimizeBox = Config.DispChromeCaptionWindowed && !_argParser._chromeless;
 				if (Config.DispChromeFrameWindowed == 0 || _argParser._chromeless)
@@ -4107,7 +4141,11 @@ namespace BizHawk.Client.EmuHawk
 					Rewinder.Suspend();
 				}
 
-				AddOnScreenMessage($"Rewind {(enabled ? "enabled" : "suspended")}");
+				// Only show rewind message if autoload is not hiding UI elements
+				if (_autoloadConfig == null || !_autoloadConfig.Enabled || !_autoloadConfig.HideStatusBar)
+				{
+					AddOnScreenMessage($"Rewind {(enabled ? "enabled" : "suspended")}");
+				}
 			}
 			UpdateStatusBarRewindIndicator();
 		}
