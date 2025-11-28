@@ -3981,6 +3981,107 @@ namespace BizHawk.Client.EmuHawk
 			return Path.Combine(pathEntry, name);
 		}
 
+		private void SaveTileDataSnapshot()
+		{
+			// Check if emulator is NES (could be NES or QuickNES core)
+			if (Emulator is not NES && Emulator is not QuickNES)
+			{
+				AddOnScreenMessage("Tile data snapshot only available for NES games");
+				return;
+			}
+
+			if (Game.IsNullInstance())
+			{
+				AddOnScreenMessage("No game loaded");
+				return;
+			}
+
+			try
+			{
+				// Get NES PPU interface from service provider
+				var ppu = Emulator.ServiceProvider.GetService<INESPPUViewable>();
+				if (ppu == null)
+				{
+					AddOnScreenMessage("Could not access NES PPU data");
+					return;
+				}
+
+				// Get tile data
+				// CIRAM contains nametable data (4 nametables = 2048 bytes)
+				// PPU Bus contains pattern tables and nametables
+				var ppuBus = ppu.GetPPUBus(); // 0x3000 bytes: pattern tables + nametables
+				var palRam = ppu.GetPalRam(); // 32 bytes: palette data
+				var oam = ppu.GetOam(); // 256 bytes: sprite data
+
+				// Create directory for tile snapshots in the same folder as save states
+				var saveStatePrefix = SaveStatePrefix();
+				var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
+				var tileDataDir = Path.Combine(saveStateDir, "screentilesaves");
+				
+				try
+				{
+					Directory.CreateDirectory(tileDataDir);
+				}
+				catch (Exception dirEx)
+				{
+					AddOnScreenMessage($"Failed to create directory: {tileDataDir} - {dirEx.Message}");
+					Util.DebugWriteLine($"Failed to create tile data directory: {dirEx}");
+					return;
+				}
+
+				// Generate unique filename with timestamp (using invariant culture to avoid locale issues)
+				var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", System.Globalization.CultureInfo.InvariantCulture);
+				var gameName = Game.FilesystemSafeName();
+				var filename = $"{gameName}_tiledata_{timestamp}.bin";
+				var filepath = Path.Combine(tileDataDir, filename);
+
+				// Save data to file
+				// Format: [4 bytes: PPU Bus size] [PPU Bus data] [4 bytes: Palette size] [Palette data] [4 bytes: OAM size] [OAM data]
+				try
+				{
+					using (var fs = new FileStream(filepath, FileMode.Create))
+					using (var writer = new BinaryWriter(fs))
+					{
+						// Write PPU Bus data (pattern tables + nametables)
+						writer.Write(ppuBus.Length);
+						writer.Write(ppuBus);
+
+						// Write Palette RAM
+						writer.Write(palRam.Length);
+						writer.Write(palRam);
+
+						// Write OAM (sprite data)
+						writer.Write(oam.Length);
+						writer.Write(oam);
+					}
+
+					// Verify file was created
+					if (File.Exists(filepath))
+					{
+						var fileInfo = new FileInfo(filepath);
+						AddOnScreenMessage($"Tile data saved: {filename} ({fileInfo.Length} bytes)");
+						Util.DebugWriteLine($"Tile data saved to: {filepath} ({fileInfo.Length} bytes)");
+					}
+					else
+					{
+						AddOnScreenMessage($"Error: File was not created at {filepath}");
+						Util.DebugWriteLine($"Error: File was not created at {filepath}");
+					}
+				}
+				catch (Exception fileEx)
+				{
+					AddOnScreenMessage($"Failed to write file: {fileEx.Message}");
+					Util.DebugWriteLine($"Failed to write tile data file: {fileEx}");
+					throw; // Re-throw to be caught by outer catch
+				}
+			}
+			catch (Exception ex)
+			{
+				AddOnScreenMessage($"Failed to save tile data: {ex.Message}");
+				Util.DebugWriteLine($"Error saving tile data: {ex}");
+			}
+		}
+
 		private void ShowLoadError(object sender, RomLoader.RomErrorArgs e)
 		{
 			if (e.Type == RomLoader.LoadErrorType.MissingFirmware)

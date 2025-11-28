@@ -38,6 +38,7 @@ namespace BizHawk.Client.Common
 			Bind("General", "Autohold");
 			Bind("General", "Clear Autohold");
 			Bind("General", "Screenshot", "F12");
+			Bind("General", "Save Tile Data");
 			Bind("General", "Full Screen", "Alt+Enter");
 			Bind("General", "Open ROM", "Ctrl+O");
 			Bind("General", "Close ROM", "Ctrl+W");

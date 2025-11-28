@@ -103,6 +103,9 @@ namespace BizHawk.Client.EmuHawk
 				case "Quick Save":
 					SavestateCurrentSlot();
 					break;
+				case "Save Tile Data":
+					SaveTileDataSnapshot();
+					break;
 				case "Clear Autohold":
 					ClearAutohold();
 					break;
