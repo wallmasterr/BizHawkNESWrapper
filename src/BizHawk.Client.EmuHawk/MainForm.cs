@@ -1316,16 +1316,42 @@ namespace BizHawk.Client.EmuHawk
 					var cellX = padding + col * (cellWidth + padding);
 					var cellY = padding + row * (cellHeight + padding + buttonHeight);
 					
-					// Estimate button dimensions: button matches screenshot width (which is at most cellWidth)
-					// Use a generous estimate for button height (typical button aspect ratio ~2:1 to 3:1)
-					// Button is positioned above the screenshot with a 5px gap
-					var estimatedButtonHeight = Math.Min(cellWidth / 2.5f, 50f); // Estimate based on typical aspect ratio, max 50px
-					var buttonY = cellY - estimatedButtonHeight - 5; // Button is above the screenshot
+					// Calculate screenshot dimensions to match the rendering code
+					// Use typical NES aspect ratio (256x240 ≈ 1.067:1, but we'll use 4:3 as a safe estimate)
+					var typicalScreenshotAspect = 4.0f / 3.0f;
+					var cellAspect = (float)cellWidth / cellHeight;
 					
-					// Check if mouse is over the save button (use generous click area)
-					var buttonX = cellX; // Button aligns with cell left edge
-					if (relativeX >= buttonX && relativeX < buttonX + cellWidth &&
-					    relativeY >= buttonY && relativeY < cellY)
+					float drawWidth, drawHeight, offsetX, offsetY;
+					if (typicalScreenshotAspect > cellAspect)
+					{
+						// Screenshot is wider, fit to width
+						drawWidth = cellWidth;
+						drawHeight = cellWidth / typicalScreenshotAspect;
+						offsetX = 0;
+						offsetY = (cellHeight - drawHeight) / 2;
+					}
+					else
+					{
+						// Screenshot is taller, fit to height
+						drawHeight = cellHeight;
+						drawWidth = cellHeight * typicalScreenshotAspect;
+						offsetX = (cellWidth - drawWidth) / 2;
+						offsetY = 0;
+					}
+					
+					// Calculate button position to match rendering: button aligns with screenshot (centered in cell)
+					// Button matches screenshot width, maintains button's aspect ratio
+					var estimatedButtonAspect = 2.5f; // Estimate for button aspect ratio
+					var buttonWidth = drawWidth; // Button matches screenshot width
+					var buttonHeightScaled = buttonWidth / estimatedButtonAspect;
+					
+					// Button position: aligned with screenshot (x + offsetX), above screenshot with 5px gap
+					var buttonX = cellX + offsetX; // Align with screenshot (centered)
+					var buttonY = cellY + offsetY - buttonHeightScaled - 5; // Above screenshot
+					
+					// Check if mouse is over the save button (precise click area matching rendered button)
+					if (relativeX >= buttonX && relativeX < buttonX + buttonWidth &&
+					    relativeY >= buttonY && relativeY < buttonY + buttonHeightScaled)
 					{
 						// Mouse is over save button, return slot index
 						return slotIndex;
@@ -1415,21 +1441,46 @@ namespace BizHawk.Client.EmuHawk
 					var cellX = padding + col * (cellWidth + padding);
 					var cellY = padding + row * (cellHeight + padding + buttonHeight);
 					
-					// Estimate button dimensions: button matches screenshot width (which is at most cellWidth)
-					// Use a generous estimate for button height (typical button aspect ratio ~2:1 to 3:1)
-					// Button is positioned above the screenshot with a 5px gap
-					var estimatedButtonWidth = cellWidth; // Button matches screenshot width
-					var estimatedButtonHeight = Math.Min(cellWidth / 2.5f, 50f); // Estimate based on typical aspect ratio, max 50px
-					var buttonY = cellY - estimatedButtonHeight - 5; // Button is above the screenshot
+					// Calculate screenshot dimensions to match the rendering code
+					// Use typical NES aspect ratio (256x240 ≈ 1.067:1, but we'll use 4:3 as a safe estimate)
+					var typicalScreenshotAspect = 4.0f / 3.0f;
+					var cellAspect = (float)cellWidth / cellHeight;
+					
+					float drawWidth, drawHeight, offsetX, offsetY;
+					if (typicalScreenshotAspect > cellAspect)
+					{
+						// Screenshot is wider, fit to width
+						drawWidth = cellWidth;
+						drawHeight = cellWidth / typicalScreenshotAspect;
+						offsetX = 0;
+						offsetY = (cellHeight - drawHeight) / 2;
+					}
+					else
+					{
+						// Screenshot is taller, fit to height
+						drawHeight = cellHeight;
+						drawWidth = cellHeight * typicalScreenshotAspect;
+						offsetX = (cellWidth - drawWidth) / 2;
+						offsetY = 0;
+					}
+					
+					// Calculate button position to match rendering: button aligns with screenshot (centered in cell)
+					// Button matches screenshot width, maintains button's aspect ratio
+					var estimatedButtonAspect = 2.5f; // Estimate for button aspect ratio
+					var buttonWidth = drawWidth; // Button matches screenshot width
+					var buttonHeightScaled = buttonWidth / estimatedButtonAspect;
+					
+					// Button position: aligned with screenshot (x + offsetX), above screenshot with 5px gap
+					var buttonX = cellX + offsetX; // Align with screenshot (centered)
+					var buttonY = cellY + offsetY - buttonHeightScaled - 5; // Above screenshot
 
 					// Get current mouse button state
 					var mouseButtons = Control.MouseButtons;
 					var leftButtonPressed = (mouseButtons & MouseButtons.Left) != 0;
 
-					// Check if mouse is over the save button (use generous click area)
-					var buttonX = cellX; // Button aligns with cell left edge (screenshot is centered, but button uses full width)
-					if (relativeX >= buttonX && relativeX < buttonX + cellWidth &&
-					    relativeY >= buttonY && relativeY < cellY)
+					// Check if mouse is over the save button (precise click area matching rendered button)
+					if (relativeX >= buttonX && relativeX < buttonX + buttonWidth &&
+					    relativeY >= buttonY && relativeY < buttonY + buttonHeightScaled)
 					{
 						// Only trigger on button press (transition from not pressed to pressed)
 						if (leftButtonPressed && !_lastMouseLeftButtonState)

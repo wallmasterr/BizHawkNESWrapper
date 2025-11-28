@@ -447,7 +447,7 @@ namespace BizHawk.Client.Common.Filters
 			}
 			else
 			{
-				FilterProgram.GL.ClearColor(Color.FromArgb(BackgroundColor));
+			FilterProgram.GL.ClearColor(Color.FromArgb(BackgroundColor));
 			}
 
 			FilterProgram.GuiRenderer.Begin(OutputSize.Width, OutputSize.Height);
