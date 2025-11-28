@@ -4260,6 +4260,68 @@ namespace BizHawk.Client.EmuHawk
 			return Path.Combine(saveStateDir, "AutoSaveTileData", "sequence.txt");
 		}
 
+		private string GetSlotSequenceNumberFilePath(int slot)
+		{
+			if (Game.IsNullInstance())
+				return null;
+			
+			var saveStatePrefix = SaveStatePrefix();
+			var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
+			return Path.Combine(saveStateDir, "AutoSaveTileData", $"slot{slot}_sequence.txt");
+		}
+
+		private void SaveSlotSequenceNumber(int slot)
+		{
+			try
+			{
+				var filePath = GetSlotSequenceNumberFilePath(slot);
+				if (filePath == null)
+					return;
+				
+				var dir = Path.GetDirectoryName(filePath);
+				if (dir != null && !Directory.Exists(dir))
+				{
+					Directory.CreateDirectory(dir);
+				}
+				
+				File.WriteAllText(filePath, _nextAutoSaveSequenceNumber.ToString());
+				Util.DebugWriteLine($"Saved sequence number for slot {slot}: {_nextAutoSaveSequenceNumber} to {filePath}");
+			}
+			catch (Exception ex)
+			{
+				Util.DebugWriteLine($"Error saving sequence number for slot {slot}: {ex}");
+			}
+		}
+
+		private void LoadSlotSequenceNumber(int slot)
+		{
+			try
+			{
+				var filePath = GetSlotSequenceNumberFilePath(slot);
+				if (filePath == null || !File.Exists(filePath))
+				{
+					Util.DebugWriteLine($"Sequence number file for slot {slot} not found, keeping current sequence number {_nextAutoSaveSequenceNumber}");
+					return;
+				}
+				
+				var content = File.ReadAllText(filePath).Trim();
+				if (int.TryParse(content, out var number) && number >= 0)
+				{
+					_nextAutoSaveSequenceNumber = number;
+					SaveAutoSaveSequenceNumber(); // Update the main sequence file too
+					Util.DebugWriteLine($"Loaded sequence number for slot {slot}: {_nextAutoSaveSequenceNumber} from {filePath}");
+				}
+				else
+				{
+					Util.DebugWriteLine($"Invalid sequence number in file for slot {slot}, keeping current sequence number {_nextAutoSaveSequenceNumber}");
+				}
+			}
+			catch (Exception ex)
+			{
+				Util.DebugWriteLine($"Error loading sequence number for slot {slot}: {ex}, keeping current sequence number {_nextAutoSaveSequenceNumber}");
+			}
+		}
+
 		private void SaveAutoSaveSequenceNumber()
 		{
 			try
@@ -5095,10 +5157,35 @@ namespace BizHawk.Client.EmuHawk
 				AddOnScreenMessage($"Loaded state: {userFriendlyStateName}");
 			}
 			
-			// After loading a save state, check which bin file matches and sync sequence number
+			// After loading a save state, save it to slot 9 (auto-save slot)
+			if (Emulator.HasSavestates())
+			{
+				SaveQuickSave(9, suppressOSD: true);
+			}
+			
+			// After loading a save state, restore the sequence number for that slot
 			if (Emulator is NES || Emulator is QuickNES)
 			{
-				SyncAutoSaveSequenceNumberFromCurrentState();
+				// Try to extract slot number from userFriendlyStateName (e.g., "QuickSave5")
+				if (userFriendlyStateName.StartsWith("QuickSave", StringComparison.OrdinalIgnoreCase))
+				{
+					var slotStr = userFriendlyStateName.Substring("QuickSave".Length);
+					if (int.TryParse(slotStr, out int slot))
+					{
+						// Load the sequence number that was saved with this slot
+						LoadSlotSequenceNumber(slot);
+					}
+					else
+					{
+						// Fallback: sync from tile data if we can't parse the slot number
+						SyncAutoSaveSequenceNumberFromCurrentState();
+					}
+				}
+				else
+				{
+					// Not a QuickSave slot, sync from tile data
+					SyncAutoSaveSequenceNumberFromCurrentState();
+				}
 			}
 			
 			return true;
@@ -5252,6 +5339,12 @@ namespace BizHawk.Client.EmuHawk
 			}
 
 			SaveState(path, quickSlotName, fromLua, suppressOSD);
+
+			// Save the current sequence number for this slot
+			if (Emulator is NES || Emulator is QuickNES)
+			{
+				SaveSlotSequenceNumber(slot % 10);
+			}
 
 			if (Tools.Has<LuaConsole>()) Tools.LuaConsole.CallStateSaveCallbacks(quickSlotName);
 		}
