@@ -1154,9 +1154,13 @@ namespace BizHawk.Client.EmuHawk
 				}
 				
 				// Check for achievement matches periodically (every 60 frames to avoid performance impact)
+				// Only if auto-save is enabled in autoload config (defaults to true if config not loaded)
 				if (Emulator.Frame % 60 == 0 && !Game.IsNullInstance() && (Emulator is NES || Emulator is QuickNES))
 				{
-					CheckForAchievementMatch();
+					if (_autoloadConfig == null || _autoloadConfig.AutoSaveEnabled)
+					{
+						CheckForAchievementMatch();
+					}
 				}
 				
 				StepRunLoop_Throttle();
@@ -4813,8 +4817,11 @@ namespace BizHawk.Client.EmuHawk
 					}
 					else if (!MovieSession.NewMovieQueued)
 					{
-						// Auto-load the most recent save state if available
-						AutoLoadMostRecentSaveState();
+						// Auto-load the most recent save state if available and enabled in autoload config
+						if (_autoloadConfig == null || _autoloadConfig.AutoLoadEnabled)
+						{
+							AutoLoadMostRecentSaveState();
+						}
 					}
 
 					if (FirmwareManager.RecentlyServed.Count > 0)

@@ -42,6 +42,16 @@ namespace BizHawk.Client.EmuHawk
 		/// Index of the currently selected background image in BackgroundImages list
 		/// </summary>
 		public int CurrentBackgroundIndex { get; set; } = 0;
+
+		/// <summary>
+		/// Whether to enable auto-save to slot 9 when tile data matches
+		/// </summary>
+		public bool AutoSaveEnabled { get; set; } = true;
+
+		/// <summary>
+		/// Whether to enable auto-load of the most recent save state on game launch
+		/// </summary>
+		public bool AutoLoadEnabled { get; set; } = true;
 	}
 }
 
