@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Windows.Forms;
 using System.Security.AccessControl;
@@ -1387,6 +1388,7 @@ namespace BizHawk.Client.EmuHawk
 		private bool _lastMouseLeftButtonState = false;
 		private string? _lastAchievementShown = null;
 		private int _lastAchievementFrame = -1;
+		private int _nextAutoSaveSequenceNumber = 0; // Next numbered file to check in AutoSaveTileData directory
 
 		private void HandleSaveSlotClick(DisplayManager dm)
 		{
@@ -4026,9 +4028,6 @@ namespace BizHawk.Client.EmuHawk
 				var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
 				var tileDataDir = Path.Combine(saveStateDir, "screentilesaves");
 				
-				// Check if current tile data matches any saved screen dumps
-				CheckForAchievement(ppuBus, palRam, oam, tileDataDir);
-				
 				try
 				{
 					Directory.CreateDirectory(tileDataDir);
@@ -4110,7 +4109,7 @@ namespace BizHawk.Client.EmuHawk
 
 				var saveStatePrefix = SaveStatePrefix();
 				var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
-				var tileDataDir = Path.Combine(saveStateDir, "screentilesaves");
+				var tileDataDir = Path.Combine(saveStateDir, "AutoSaveTileData");
 
 				Util.DebugWriteLine($"CheckForAchievementMatch: Checking directory {tileDataDir}, PPU Bus: {ppuBus?.Length ?? 0}, PalRAM: {palRam?.Length ?? 0}, OAM: {oam?.Length ?? 0}");
 				CheckForAchievement(ppuBus, palRam, oam, tileDataDir);
@@ -4129,83 +4128,349 @@ namespace BizHawk.Client.EmuHawk
 				return;
 			}
 
+			// Check both the next numbered file in sequence AND 0.bin
+			var filesToCheck = new List<string>();
+			
+			// Always check 0.bin
+			var zeroFile = Path.Combine(tileDataDir, "0.bin");
+			if (File.Exists(zeroFile))
+			{
+				filesToCheck.Add(zeroFile);
+			}
+			
+			// Check the next sequence number (if it's not 0, to avoid checking twice)
+			if (_nextAutoSaveSequenceNumber != 0)
+			{
+				var nextFile = Path.Combine(tileDataDir, $"{_nextAutoSaveSequenceNumber}.bin");
+				if (File.Exists(nextFile))
+				{
+					filesToCheck.Add(nextFile);
+				}
+			}
+			
+			if (filesToCheck.Count == 0)
+			{
+				// No files to check
+				return;
+			}
+
+			// Check each file
+			foreach (var fileToCheck in filesToCheck)
+			{
+				try
+				{
+					using (var fs = new FileStream(fileToCheck, FileMode.Open, FileAccess.Read))
+					using (var reader = new BinaryReader(fs))
+					{
+						// Read PPU Bus data
+						var savedPpuBusSize = reader.ReadInt32();
+						if (savedPpuBusSize != currentPpuBus.Length)
+						{
+							Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(fileToCheck)} - PPU Bus size mismatch: {savedPpuBusSize} vs {currentPpuBus.Length}");
+							continue;
+						}
+						var savedPpuBus = reader.ReadBytes(savedPpuBusSize);
+						
+						// Read Palette RAM
+						var savedPalRamSize = reader.ReadInt32();
+						if (savedPalRamSize != currentPalRam.Length)
+						{
+							Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(fileToCheck)} - PalRAM size mismatch: {savedPalRamSize} vs {currentPalRam.Length}");
+							continue;
+						}
+						var savedPalRam = reader.ReadBytes(savedPalRamSize);
+						
+						// Read OAM (but don't use it for comparison)
+						var savedOamSize = reader.ReadInt32();
+						if (savedOamSize != currentOam.Length)
+						{
+							Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(fileToCheck)} - OAM size mismatch: {savedOamSize} vs {currentOam.Length}");
+							continue;
+						}
+						reader.ReadBytes(savedOamSize); // Discard OAM data
+						
+						// Compare data - focus on level/background data
+						// Compare PPU Bus (contains nametables which represent level layout)
+						bool ppuMatch = ArraysEqual(savedPpuBus, currentPpuBus);
+						// Compare Palette RAM (background colors)
+						bool palMatch = ArraysEqual(savedPalRam, currentPalRam);
+						// Skip OAM comparison - sprites change every frame, we only care about level layout
+						
+						Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(fileToCheck)} - PPU: {ppuMatch}, Pal: {palMatch}");
+						
+						// Match if PPU Bus (level layout) and Palette match
+						if (ppuMatch && palMatch)
+						{
+							// Match found! Auto-save to slot 9 and move to next sequence number
+							var fileName = Path.GetFileNameWithoutExtension(fileToCheck);
+							var fileNumber = int.Parse(fileName);
+							
+							// Display achievement message (but only once per 300 frames to avoid spam)
+							if (_lastAchievementShown != fileName || Emulator.Frame - _lastAchievementFrame > 300)
+							{
+								_lastAchievementShown = fileName;
+								_lastAchievementFrame = Emulator.Frame;
+								AddOnScreenMessage($"Achievement Unlocked: {fileName}");
+								Util.DebugWriteLine($"Achievement unlocked: {fileName}");
+							}
+							
+							// Auto-save to slot 9
+							SaveQuickSave(9, suppressOSD: false);
+							AddOnScreenMessage($"Auto-saved to slot 9 (matched {fileName})");
+							Util.DebugWriteLine($"Auto-saved to slot 9: matched {fileName}");
+							
+							// Only increment sequence number if we matched the next sequence number (not 0)
+							if (fileNumber == _nextAutoSaveSequenceNumber)
+							{
+								// Move to next sequence number and save it
+								_nextAutoSaveSequenceNumber++;
+								SaveAutoSaveSequenceNumber();
+								Util.DebugWriteLine($"Moved to next sequence number: {_nextAutoSaveSequenceNumber}");
+							}
+							else
+							{
+								// Matched 0.bin, don't increment sequence number
+								Util.DebugWriteLine($"Matched 0.bin, sequence number remains at {_nextAutoSaveSequenceNumber}");
+							}
+							
+							// Only process first match
+							return;
+						}
+					}
+				}
+				catch (Exception ex)
+				{
+					Util.DebugWriteLine($"Error reading tile data file {fileToCheck}: {ex}");
+					continue;
+				}
+			}
+		}
+
+		private string GetAutoSaveSequenceNumberFilePath()
+		{
+			if (Game.IsNullInstance())
+				return null;
+			
+			var saveStatePrefix = SaveStatePrefix();
+			var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
+			return Path.Combine(saveStateDir, "AutoSaveTileData", "sequence.txt");
+		}
+
+		private void SaveAutoSaveSequenceNumber()
+		{
 			try
 			{
-				var binFiles = Directory.GetFiles(tileDataDir, "*.bin");
-				Util.DebugWriteLine($"CheckForAchievement: Found {binFiles.Length} bin files to check");
+				var filePath = GetAutoSaveSequenceNumberFilePath();
+				if (filePath == null)
+					return;
 				
+				var dir = Path.GetDirectoryName(filePath);
+				if (dir != null && !Directory.Exists(dir))
+				{
+					Directory.CreateDirectory(dir);
+				}
+				
+				File.WriteAllText(filePath, _nextAutoSaveSequenceNumber.ToString());
+				Util.DebugWriteLine($"Saved auto-save sequence number: {_nextAutoSaveSequenceNumber} to {filePath}");
+			}
+			catch (Exception ex)
+			{
+				Util.DebugWriteLine($"Error saving auto-save sequence number: {ex}");
+			}
+		}
+
+		private void LoadAutoSaveSequenceNumber()
+		{
+			try
+			{
+				var filePath = GetAutoSaveSequenceNumberFilePath();
+				if (filePath == null || !File.Exists(filePath))
+				{
+					_nextAutoSaveSequenceNumber = 0;
+					Util.DebugWriteLine($"Auto-save sequence number file not found, starting at 0");
+					return;
+				}
+				
+				var content = File.ReadAllText(filePath).Trim();
+				if (int.TryParse(content, out var number) && number >= 0)
+				{
+					_nextAutoSaveSequenceNumber = number;
+					Util.DebugWriteLine($"Loaded auto-save sequence number: {_nextAutoSaveSequenceNumber} from {filePath}");
+				}
+				else
+				{
+					_nextAutoSaveSequenceNumber = 0;
+					Util.DebugWriteLine($"Invalid sequence number in file, starting at 0");
+				}
+			}
+			catch (Exception ex)
+			{
+				_nextAutoSaveSequenceNumber = 0;
+				Util.DebugWriteLine($"Error loading auto-save sequence number: {ex}, starting at 0");
+			}
+		}
+
+		private void SyncAutoSaveSequenceNumberFromCurrentState()
+		{
+			try
+			{
+				var ppu = Emulator.ServiceProvider.GetService<INESPPUViewable>();
+				if (ppu == null)
+				{
+					Util.DebugWriteLine("SyncAutoSaveSequenceNumberFromCurrentState: PPU service not available");
+					return;
+				}
+
+				var ppuBus = ppu.GetPPUBus();
+				var palRam = ppu.GetPalRam();
+				var oam = ppu.GetOam();
+
+				var saveStatePrefix = SaveStatePrefix();
+				var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
+				var tileDataDir = Path.Combine(saveStateDir, "AutoSaveTileData");
+
+				if (!Directory.Exists(tileDataDir))
+				{
+					Util.DebugWriteLine($"SyncAutoSaveSequenceNumberFromCurrentState: Directory does not exist: {tileDataDir}");
+					return;
+				}
+
+				// Find which numbered bin file matches the current tile data
+				var binFiles = Directory.GetFiles(tileDataDir, "*.bin")
+					.OrderBy(f => {
+						var fileName = Path.GetFileNameWithoutExtension(f);
+						if (int.TryParse(fileName, out var num))
+							return num;
+						return int.MaxValue; // Put non-numeric files at the end
+					})
+					.ToArray();
+
+				Util.DebugWriteLine($"SyncAutoSaveSequenceNumberFromCurrentState: Checking {binFiles.Length} bin files");
+
+				// Check files in order to find the highest matching one
+				int highestMatch = -1; // Use -1 to indicate no match found
 				foreach (var binFile in binFiles)
 				{
 					try
 					{
+						var fileName = Path.GetFileNameWithoutExtension(binFile);
+						if (!int.TryParse(fileName, out var fileNumber))
+							continue;
+
 						using (var fs = new FileStream(binFile, FileMode.Open, FileAccess.Read))
 						using (var reader = new BinaryReader(fs))
 						{
 							// Read PPU Bus data
 							var savedPpuBusSize = reader.ReadInt32();
-							if (savedPpuBusSize != currentPpuBus.Length)
-							{
-								Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(binFile)} - PPU Bus size mismatch: {savedPpuBusSize} vs {currentPpuBus.Length}");
+							if (savedPpuBusSize != ppuBus.Length)
 								continue;
-							}
 							var savedPpuBus = reader.ReadBytes(savedPpuBusSize);
 							
 							// Read Palette RAM
 							var savedPalRamSize = reader.ReadInt32();
-							if (savedPalRamSize != currentPalRam.Length)
-							{
-								Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(binFile)} - PalRAM size mismatch: {savedPalRamSize} vs {currentPalRam.Length}");
+							if (savedPalRamSize != palRam.Length)
 								continue;
-							}
 							var savedPalRam = reader.ReadBytes(savedPalRamSize);
 							
-							// Read OAM
+							// Read OAM (but don't use it for comparison)
 							var savedOamSize = reader.ReadInt32();
-							if (savedOamSize != currentOam.Length)
-							{
-								Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(binFile)} - OAM size mismatch: {savedOamSize} vs {currentOam.Length}");
+							if (savedOamSize != oam.Length)
 								continue;
-							}
-							var savedOam = reader.ReadBytes(savedOamSize);
+							reader.ReadBytes(savedOamSize); // Discard OAM data
 							
-							// Compare data - focus on level/background data
-							// Compare PPU Bus (contains nametables which represent level layout)
-							bool ppuMatch = ArraysEqual(savedPpuBus, currentPpuBus);
-							// Compare Palette RAM (background colors)
-							bool palMatch = ArraysEqual(savedPalRam, currentPalRam);
-							// Skip OAM comparison - sprites change every frame, we only care about level layout
-							// bool oamMatch = ArraysEqual(savedOam, currentOam);
+							// Compare data
+							bool ppuMatch = ArraysEqual(savedPpuBus, ppuBus);
+							bool palMatch = ArraysEqual(savedPalRam, palRam);
 							
-							Util.DebugWriteLine($"CheckForAchievement: {Path.GetFileName(binFile)} - PPU: {ppuMatch}, Pal: {palMatch}");
-							
-							// Match if PPU Bus (level layout) and Palette match
-							// OAM (sprites) is ignored since it changes constantly
 							if (ppuMatch && palMatch)
 							{
-								// Match found! Display achievement message (but only once per 300 frames to avoid spam)
-								var fileName = Path.GetFileNameWithoutExtension(binFile);
-								if (_lastAchievementShown != fileName || Emulator.Frame - _lastAchievementFrame > 300)
-								{
-									_lastAchievementShown = fileName;
-									_lastAchievementFrame = Emulator.Frame;
-									AddOnScreenMessage($"Achievement Unlocked: {fileName}");
-									Util.DebugWriteLine($"Achievement unlocked: {fileName}");
-								}
-								return; // Only show first match
+								highestMatch = Math.Max(highestMatch, fileNumber);
+								Util.DebugWriteLine($"SyncAutoSaveSequenceNumberFromCurrentState: Found match with file {fileNumber}");
 							}
 						}
 					}
 					catch (Exception ex)
 					{
-						// Skip files that can't be read
 						Util.DebugWriteLine($"Error reading tile data file {binFile}: {ex}");
 						continue;
 					}
 				}
+
+				if (highestMatch >= 0)
+				{
+					// Set sequence number to the next one after the highest match
+					_nextAutoSaveSequenceNumber = highestMatch + 1;
+					SaveAutoSaveSequenceNumber();
+					Util.DebugWriteLine($"SyncAutoSaveSequenceNumberFromCurrentState: Synced to sequence number {_nextAutoSaveSequenceNumber} (highest match was {highestMatch})");
+				}
+				else
+				{
+					// No match found, keep current sequence number
+					Util.DebugWriteLine($"SyncAutoSaveSequenceNumberFromCurrentState: No matching bin file found, keeping current sequence number {_nextAutoSaveSequenceNumber}");
+				}
 			}
 			catch (Exception ex)
 			{
-				Util.DebugWriteLine($"Error checking for achievements: {ex}");
+				Util.DebugWriteLine($"Error syncing auto-save sequence number: {ex}");
+			}
+		}
+
+		private void AutoLoadMostRecentSaveState()
+		{
+			if (!Emulator.HasSavestates() || Game.IsNullInstance())
+			{
+				return;
+			}
+
+			try
+			{
+				var saveStatePrefix = SaveStatePrefix();
+				var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
+				
+				if (!Directory.Exists(saveStateDir))
+				{
+					return;
+				}
+
+				// Find all save state files matching the prefix pattern
+				var prefixName = Path.GetFileName(saveStatePrefix);
+				var stateFiles = Directory.GetFiles(saveStateDir, $"{prefixName}*.State");
+				
+				if (stateFiles.Length == 0)
+				{
+					return;
+				}
+
+				// Sort by last write time (most recent first)
+				var mostRecentState = stateFiles
+					.OrderByDescending(f => new FileInfo(f).LastWriteTime)
+					.FirstOrDefault();
+
+				if (mostRecentState != null && File.Exists(mostRecentState))
+				{
+					var stateName = Path.GetFileNameWithoutExtension(mostRecentState);
+					// Extract slot number if it's a QuickSave slot
+					if (stateName.Contains("QuickSave"))
+					{
+						var match = Regex.Match(stateName, @"QuickSave(\d+)");
+						if (match.Success && int.TryParse(match.Groups[1].Value, out var slot))
+						{
+							LoadQuickSave(slot, suppressOSD: true);
+							AddOnScreenMessage($"Auto-loaded: {stateName}");
+							Util.DebugWriteLine($"Auto-loaded most recent save state: {mostRecentState}");
+							return;
+						}
+					}
+					
+					// Fallback: load by path
+					LoadState(mostRecentState, stateName, suppressOSD: true);
+					AddOnScreenMessage($"Auto-loaded: {stateName}");
+					Util.DebugWriteLine($"Auto-loaded most recent save state: {mostRecentState}");
+				}
+			}
+			catch (Exception ex)
+			{
+				Util.DebugWriteLine($"Error auto-loading most recent save state: {ex}");
 			}
 		}
 
@@ -4538,9 +4803,18 @@ namespace BizHawk.Client.EmuHawk
 
 					RewireSound();
 					Tools.UpdateCheatRelatedTools(null, new(null));
+					
+					// Load auto-save sequence number when loading a new game
+					LoadAutoSaveSequenceNumber();
+					
 					if (!MovieSession.NewMovieQueued && Config.AutoLoadLastSaveSlot && HasSlot(Config.SaveSlot))
 					{
 						_ = LoadstateCurrentSlot();
+					}
+					else if (!MovieSession.NewMovieQueued)
+					{
+						// Auto-load the most recent save state if available
+						AutoLoadMostRecentSaveState();
 					}
 
 					if (FirmwareManager.RecentlyServed.Count > 0)
@@ -4813,6 +5087,13 @@ namespace BizHawk.Client.EmuHawk
 			{
 				AddOnScreenMessage($"Loaded state: {userFriendlyStateName}");
 			}
+			
+			// After loading a save state, check which bin file matches and sync sequence number
+			if (Emulator is NES || Emulator is QuickNES)
+			{
+				SyncAutoSaveSequenceNumberFromCurrentState();
+			}
+			
 			return true;
 		}
 
@@ -4839,7 +5120,11 @@ namespace BizHawk.Client.EmuHawk
 				return false;
 			}
 
-			return LoadState(path: path, userFriendlyStateName: quickSlotName, suppressOSD: suppressOSD);
+			var result = LoadState(path: path, userFriendlyStateName: quickSlotName, suppressOSD: suppressOSD);
+			
+			// Sync sequence number after loading (LoadState already calls SyncAutoSaveSequenceNumberFromCurrentState)
+			
+			return result;
 		}
 
 		public void SaveState(string path, string userFriendlyStateName, bool fromLua = false, bool suppressOSD = false)
