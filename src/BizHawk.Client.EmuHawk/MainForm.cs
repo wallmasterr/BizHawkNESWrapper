@@ -4195,7 +4195,8 @@ namespace BizHawk.Client.EmuHawk
 						
 						// Compare data - focus on level/background data
 						// Compare PPU Bus (contains nametables which represent level layout)
-						bool ppuMatch = ArraysEqual(savedPpuBus, currentPpuBus);
+						// Ignore first 2 rows of each nametable (lives/collectibles baked into tiles)
+						bool ppuMatch = ArraysEqualIgnoringFirstTwoRows(savedPpuBus, currentPpuBus);
 						// Compare Palette RAM (background colors)
 						bool palMatch = ArraysEqual(savedPalRam, currentPalRam);
 						// Skip OAM comparison - sprites change every frame, we only care about level layout
@@ -4445,7 +4446,8 @@ namespace BizHawk.Client.EmuHawk
 							reader.ReadBytes(savedOamSize); // Discard OAM data
 							
 							// Compare data
-							bool ppuMatch = ArraysEqual(savedPpuBus, ppuBus);
+							// Ignore first 2 rows of each nametable (lives/collectibles baked into tiles)
+							bool ppuMatch = ArraysEqualIgnoringFirstTwoRows(savedPpuBus, ppuBus);
 							bool palMatch = ArraysEqual(savedPalRam, palRam);
 							
 							if (ppuMatch && palMatch)
@@ -4550,6 +4552,107 @@ namespace BizHawk.Client.EmuHawk
 			{
 				if (a[i] != b[i]) return false;
 			}
+			return true;
+		}
+
+		/// <summary>
+		/// Compares PPU Bus data, ignoring the first 4 rows and last 4 rows of each nametable,
+		/// and only checking alternate rows for the remaining rows. This is faster and still
+		/// reliable for detecting level changes, while ignoring HUD elements.
+		/// </summary>
+		private static bool ArraysEqualIgnoringFirstTwoRows(byte[] a, byte[] b)
+		{
+			if (a == null && b == null) return true;
+			if (a == null || b == null) return false;
+			if (a.Length != b.Length) return false;
+			
+			// PPU Bus structure:
+			// $0000-$1FFF: Pattern tables (8192 bytes) - compare all
+			// $2000-$23BF: Nametable 0 (960 bytes = 32*30 tiles) - skip first 4 and last 4 rows, check alternate rows
+			// $23C0-$23FF: Attribute Table 0 (64 bytes) - compare all
+			// $2400-$27BF: Nametable 1 (960 bytes) - same skipping
+			// $27C0-$27FF: Attribute Table 1 (64 bytes) - compare all
+			// $2800-$2BBF: Nametable 2 (960 bytes) - same skipping
+			// $2BC0-$2BFF: Attribute Table 2 (64 bytes) - compare all
+			// $2C00-$2FBF: Nametable 3 (960 bytes) - same skipping
+			// $2FC0-$2FFF: Attribute Table 3 (64 bytes) - compare all
+			// $3000-$3EFF: Mirror of $2000-$2EFF - same skipping
+			// $3F00-$3FFF: Palette RAM - compare all
+			
+			const int patternTableSize = 0x2000; // 8192 bytes
+			const int nametableSize = 0x3C0; // 960 bytes (32*30 tiles)
+			const int attributeTableSize = 0x40; // 64 bytes
+			const int tilesPerRow = 32; // 32 tiles per row
+			const int rowsPerNametable = 30; // 30 rows per nametable
+			const int rowsToSkipAtStart = 4; // Skip first 4 rows
+			const int rowsToSkipAtEnd = 4; // Skip last 4 rows
+			const int rowsToCheck = rowsPerNametable - rowsToSkipAtStart - rowsToSkipAtEnd; // 22 rows remaining
+			
+			// Compare pattern tables (0x0000-0x1FFF) - all bytes
+			for (int i = 0; i < patternTableSize && i < a.Length; i++)
+			{
+				if (a[i] != b[i]) return false;
+			}
+			
+			// Compare each of the 4 nametables, skipping first 4 rows, last 4 rows, and checking alternate rows
+			for (int nt = 0; nt < 4; nt++)
+			{
+				int nametableStart = patternTableSize + (nt * (nametableSize + attributeTableSize));
+				
+				// Check alternate rows in the middle section (skip first 4 and last 4 rows)
+				// Start at row 4 (after skipping first 4 rows), check every other row
+				for (int row = rowsToSkipAtStart; row < rowsPerNametable - rowsToSkipAtEnd; row += 2)
+				{
+					int rowStart = nametableStart + (row * tilesPerRow);
+					for (int i = 0; i < tilesPerRow; i++)
+					{
+						int offset = rowStart + i;
+						if (offset >= a.Length) break;
+						if (a[offset] != b[offset]) return false;
+					}
+				}
+				
+				// Compare attribute table (all bytes)
+				int attrStart = nametableStart + nametableSize;
+				for (int i = attrStart; i < attrStart + attributeTableSize && i < a.Length; i++)
+				{
+					if (a[i] != b[i]) return false;
+				}
+			}
+			
+			// Compare mirror region ($3000-$3EFF) - same structure, same skipping
+			int mirrorStart = 0x3000;
+			for (int nt = 0; nt < 4; nt++)
+			{
+				int nametableStart = mirrorStart + (nt * (nametableSize + attributeTableSize));
+				
+				// Check alternate rows in the middle section
+				for (int row = rowsToSkipAtStart; row < rowsPerNametable - rowsToSkipAtEnd; row += 2)
+				{
+					int rowStart = nametableStart + (row * tilesPerRow);
+					for (int i = 0; i < tilesPerRow; i++)
+					{
+						int offset = rowStart + i;
+						if (offset >= a.Length) break;
+						if (a[offset] != b[offset]) return false;
+					}
+				}
+				
+				// Compare attribute table
+				int attrStart = nametableStart + nametableSize;
+				for (int i = attrStart; i < attrStart + attributeTableSize && i < a.Length; i++)
+				{
+					if (a[i] != b[i]) return false;
+				}
+			}
+			
+			// Compare palette RAM ($3F00-$3FFF) - all bytes
+			int paletteStart = 0x3F00;
+			for (int i = paletteStart; i < a.Length && i < 0x4000; i++)
+			{
+				if (a[i] != b[i]) return false;
+			}
+			
 			return true;
 		}
 
