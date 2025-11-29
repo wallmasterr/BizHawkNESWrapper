@@ -4113,14 +4113,97 @@ namespace BizHawk.Client.EmuHawk
 
 				var saveStatePrefix = SaveStatePrefix();
 				var saveStateDir = Path.GetDirectoryName(saveStatePrefix) ?? "";
+				
+				// Check screentilesaves folder for achievements
+				var achievementDir = Path.Combine(saveStateDir, "screentilesaves");
+				if (Directory.Exists(achievementDir))
+				{
+					CheckForAchievementInDirectory(ppuBus, palRam, oam, achievementDir, isAchievementCheck: true);
+				}
+				
+				// Check AutoSaveTileData folder for auto-save progression
 				var tileDataDir = Path.Combine(saveStateDir, "AutoSaveTileData");
-
-				Util.DebugWriteLine($"CheckForAchievementMatch: Checking directory {tileDataDir}, PPU Bus: {ppuBus?.Length ?? 0}, PalRAM: {palRam?.Length ?? 0}, OAM: {oam?.Length ?? 0}");
 				CheckForAchievement(ppuBus, palRam, oam, tileDataDir);
 			}
 			catch (Exception ex)
 			{
 				Util.DebugWriteLine($"Error in CheckForAchievementMatch: {ex}");
+			}
+		}
+
+		private void CheckForAchievementInDirectory(byte[] currentPpuBus, byte[] currentPalRam, byte[] currentOam, string tileDataDir, bool isAchievementCheck)
+		{
+			if (!Directory.Exists(tileDataDir))
+			{
+				return;
+			}
+
+			try
+			{
+				var binFiles = Directory.GetFiles(tileDataDir, "*.bin");
+				Util.DebugWriteLine($"CheckForAchievementInDirectory: Checking {binFiles.Length} bin files in {tileDataDir}");
+				
+				foreach (var binFile in binFiles)
+				{
+					try
+					{
+						using (var fs = new FileStream(binFile, FileMode.Open, FileAccess.Read))
+						using (var reader = new BinaryReader(fs))
+						{
+							// Read PPU Bus data
+							var savedPpuBusSize = reader.ReadInt32();
+							if (savedPpuBusSize != currentPpuBus.Length)
+								continue;
+							var savedPpuBus = reader.ReadBytes(savedPpuBusSize);
+							
+							// Read Palette RAM
+							var savedPalRamSize = reader.ReadInt32();
+							if (savedPalRamSize != currentPalRam.Length)
+								continue;
+							var savedPalRam = reader.ReadBytes(savedPalRamSize);
+							
+							// Read OAM (but don't use it for comparison)
+							var savedOamSize = reader.ReadInt32();
+							if (savedOamSize != currentOam.Length)
+								continue;
+							reader.ReadBytes(savedOamSize); // Discard OAM data
+							
+							// Compare data - ignore first 4 rows, last 4 rows, and check alternate rows
+							bool ppuMatch = ArraysEqualIgnoringFirstTwoRows(savedPpuBus, currentPpuBus);
+							bool palMatch = ArraysEqual(savedPalRam, currentPalRam);
+							
+							if (ppuMatch && palMatch)
+							{
+								// Match found!
+								var fileName = Path.GetFileNameWithoutExtension(binFile);
+								
+								if (isAchievementCheck)
+								{
+									// Display achievement message (but only once per 300 frames to avoid spam)
+									if (_lastAchievementShown != fileName || Emulator.Frame - _lastAchievementFrame > 300)
+									{
+										_lastAchievementShown = fileName;
+										_lastAchievementFrame = Emulator.Frame;
+										AddOnScreenMessage($"Achievement Unlocked: {fileName}");
+										Util.DebugWriteLine($"Achievement unlocked: {fileName}");
+									}
+								}
+								
+								// Only process first match
+								return;
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						Util.DebugWriteLine($"Error reading tile data file {binFile}: {ex}");
+						continue;
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				Util.DebugWriteLine($"Error checking for achievements in directory {tileDataDir}: {ex}");
 			}
 		}
 
