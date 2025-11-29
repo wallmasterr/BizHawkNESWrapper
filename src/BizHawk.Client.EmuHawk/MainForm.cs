@@ -1153,9 +1153,9 @@ namespace BizHawk.Client.EmuHawk
 					HandleSaveSlotClick(dm);
 				}
 				
-				// Check for achievement matches periodically (every 60 frames to avoid performance impact)
+				// Check for achievement matches periodically (every 30 frames to avoid performance impact)
 				// Only if auto-save is enabled in autoload config (defaults to true if config not loaded)
-				if (Emulator.Frame % 60 == 0 && !Game.IsNullInstance() && (Emulator is NES || Emulator is QuickNES))
+				if (Emulator.Frame % 30 == 0 && !Game.IsNullInstance() && (Emulator is NES || Emulator is QuickNES))
 				{
 					if (_autoloadConfig == null || _autoloadConfig.AutoSaveEnabled)
 					{
