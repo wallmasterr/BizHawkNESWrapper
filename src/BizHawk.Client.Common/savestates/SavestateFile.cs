@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Threading.Tasks;
 
 using BizHawk.Bizware.Graphics;
 using BizHawk.Common;
@@ -128,6 +129,98 @@ namespace BizHawk.Client.Common
 			if (_movieSession.Movie.IsActive() && _movieSession.Movie is ITasMovie tasMovie)
 			{
 				bs.PutLump(BinaryStateLump.LagLog, tw => tasMovie.LagLog.Save(tw), zstdCompress: true);
+			}
+		}
+
+		/// <summary>
+		/// Creates a save state asynchronously by serializing to memory first, then writing to disk on a background thread.
+		/// This prevents frame drops during save state operations.
+		/// </summary>
+		public async Task CreateAsync(string filename, SaveStateConfig config)
+		{
+			// Serialize all data to memory first (this is fast and doesn't block on disk I/O)
+			MemoryZipWriter memoryWriter;
+			using (var bs = new ZipStateSaver(memoryWriter = new MemoryZipWriter(config.CompressionLevelNormal)))
+			{
+				using (new SimpleTime("Save Core"))
+				{
+					if (config.Type == SaveStateType.Text)
+					{
+						bs.PutLump(BinaryStateLump.CorestateText, tw => _statable.SaveStateText(tw));
+					}
+					else
+					{
+						bs.PutLump(BinaryStateLump.Corestate, bw => _statable.SaveStateBinary(bw));
+					}
+				}
+
+				if (config.SaveScreenshot && _videoProvider != null)
+				{
+					var outWidth = _videoProvider.BufferWidth;
+					var outHeight = _videoProvider.BufferHeight;
+
+					// if buffer is too big, scale down screenshot
+					if (!config.NoLowResLargeScreenshots && outWidth * outHeight >= config.BigScreenshotSize)
+					{
+						outWidth /= 2;
+						outHeight /= 2;
+					}
+
+					using (new SimpleTime("Save Framebuffer"))
+					{
+						bs.PutLump(
+							BinaryStateLump.Framebuffer,
+							s => QuickBmpFile.Save(_videoProvider, s, outWidth, outHeight),
+							zstdCompress: false);
+					}
+				}
+
+				if (_settable.HasSyncSettings)
+				{
+					var syncSettingsJson = ConfigService.SaveWithType(_settable.GetSyncSettings());
+					bs.PutLump(BinaryStateLump.SyncSettings, tw => tw.WriteLine(syncSettingsJson));
+				}
+
+				if (_movieSession.Movie.IsActive())
+				{
+					bs.PutLump(BinaryStateLump.Input,
+						tw =>
+						{
+							Debug.Assert(_movieSession.Movie.FrameCount >= _emulator.Frame, $"Tried to create a savestate at frame {_emulator.Frame}, but only got a log of length {_movieSession.Movie.FrameCount}!");
+							// this never should have been a core's responsibility
+							tw.WriteLine("Frame {0}", _emulator.Frame);
+							_movieSession.HandleSaveState(tw);
+						});
+				}
+
+				if (_userBag.Count is not 0)
+				{
+					bs.PutLump(BinaryStateLump.UserData,
+						tw =>
+						{
+							var data = ConfigService.SaveWithType(_userBag);
+							tw.WriteLine(data);
+						});
+				}
+
+				if (_movieSession.Movie.IsActive() && _movieSession.Movie is ITasMovie tasMovie)
+				{
+					bs.PutLump(BinaryStateLump.LagLog, tw => tasMovie.LagLog.Save(tw), zstdCompress: true);
+				}
+			}
+
+			// Ensure directory exists before writing
+			var fileInfo = new FileInfo(filename);
+			fileInfo.Directory?.Create();
+
+			// Now write to disk asynchronously (this happens on a background thread)
+			try
+			{
+				await memoryWriter.WriteToFileAsync(filename).ConfigureAwait(false);
+			}
+			finally
+			{
+				memoryWriter.DisposeMemoryStream();
 			}
 		}
 

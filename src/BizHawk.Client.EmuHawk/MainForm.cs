@@ -10,6 +10,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Security.AccessControl;
 using System.Security.Principal;
@@ -5426,66 +5427,81 @@ namespace BizHawk.Client.EmuHawk
 				return;
 			}
 
+			// Use async saving to prevent frame drops - serialize to memory first, then write to disk in background
+			_ = SaveStateAsync(path, userFriendlyStateName, fromLua, suppressOSD);
+		}
+
+		private async System.Threading.Tasks.Task SaveStateAsync(string path, string userFriendlyStateName, bool fromLua, bool suppressOSD)
+		{
 			try
 			{
-				new SavestateFile(Emulator, MovieSession, MovieSession.UserBag).Create(path, Config.Savestates);
+				await new SavestateFile(Emulator, MovieSession, MovieSession.UserBag).CreateAsync(path, Config.Savestates).ConfigureAwait(false);
 
-				if (SavestateSaved is not null)
+				// These callbacks need to run on the UI thread
+				BeginInvoke(() =>
 				{
-					StateSavedEventArgs args = new(userFriendlyStateName);
-					SavestateSaved(this, args);
-				}
-				RA?.OnSaveState(path);
-
-				// Take screenshot for QuickSave slots
-				if (userFriendlyStateName.StartsWith("QuickSave", StringComparison.OrdinalIgnoreCase))
-				{
-					try
+					if (SavestateSaved is not null)
 					{
-						// Extract slot number from "QuickSave{slot}" format
-						var slotStr = userFriendlyStateName.Substring("QuickSave".Length);
-						if (int.TryParse(slotStr, out int slot))
+						StateSavedEventArgs args = new(userFriendlyStateName);
+						SavestateSaved(this, args);
+					}
+					RA?.OnSaveState(path);
+
+					// Take screenshot for QuickSave slots
+					if (userFriendlyStateName.StartsWith("QuickSave", StringComparison.OrdinalIgnoreCase))
+					{
+						try
 						{
-							// Save screenshot in the same directory as the save state
-							var stateDir = Path.GetDirectoryName(path);
-							var screenshotPath = Path.Combine(stateDir, $"{slot}.png");
-							
-							// Replace if exists
-							if (File.Exists(screenshotPath))
+							// Extract slot number from "QuickSave{slot}" format
+							var slotStr = userFriendlyStateName.Substring("QuickSave".Length);
+							if (int.TryParse(slotStr, out int slot))
 							{
-								File.Delete(screenshotPath);
-							}
-							
-							// Take screenshot
-							var fi = new FileInfo(screenshotPath);
-							fi.Directory?.Create();
-							using (var bb = Config.ScreenshotCaptureOsd ? CaptureOSD() : MakeScreenshotImage())
-							{
-								using var img = bb.ToSysdrawingBitmap();
-								img.Save(fi.FullName, System.Drawing.Imaging.ImageFormat.Png);
+								// Save screenshot in the same directory as the save state
+								var stateDir = Path.GetDirectoryName(path);
+								var screenshotPath = Path.Combine(stateDir, $"{slot}.png");
+								
+								// Replace if exists
+								if (File.Exists(screenshotPath))
+								{
+									File.Delete(screenshotPath);
+								}
+								
+								// Take screenshot
+								var fi = new FileInfo(screenshotPath);
+								fi.Directory?.Create();
+								using (var bb = Config.ScreenshotCaptureOsd ? CaptureOSD() : MakeScreenshotImage())
+								{
+									using var img = bb.ToSysdrawingBitmap();
+									img.Save(fi.FullName, System.Drawing.Imaging.ImageFormat.Png);
+								}
 							}
 						}
+						catch (Exception ex)
+						{
+							// Don't fail the save state if screenshot fails
+							Util.DebugWriteLine($"Failed to take screenshot for save state: {ex.Message}");
+						}
 					}
-					catch (Exception ex)
-					{
-						// Don't fail the save state if screenshot fails
-						Util.DebugWriteLine($"Failed to take screenshot for save state: {ex.Message}");
-					}
-				}
 
-				if (!suppressOSD)
-				{
-					AddOnScreenMessage($"Saved state: {userFriendlyStateName}");
-				}
+					if (!suppressOSD)
+					{
+						AddOnScreenMessage($"Saved state: {userFriendlyStateName}");
+					}
+
+					if (!fromLua)
+					{
+						UpdateStatusSlots();
+					}
+				});
 			}
 			catch (IOException)
 			{
-				AddOnScreenMessage($"Unable to save state {path}");
+				BeginInvoke(() => AddOnScreenMessage($"Unable to save state {path}"));
 			}
-
-			if (!fromLua)
+			catch (Exception ex)
 			{
-				UpdateStatusSlots();
+				BeginInvoke(() => AddOnScreenMessage($"Error saving state: {ex.Message}"));
+				Util.DebugWriteLine($"Error in SaveStateAsync: {ex}");
 			}
 		}
 

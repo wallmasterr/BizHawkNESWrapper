@@ -37,6 +37,20 @@ namespace BizHawk.Client.Common
 			PutLump(BinaryStateLump.BizVersion, WriteEmuVersion, false);
 		}
 
+		/// <summary>
+		/// Creates a ZipStateSaver that writes to memory instead of directly to disk.
+		/// Use this for async saving to avoid blocking the main thread.
+		/// </summary>
+		public ZipStateSaver(IZipWriter zipWriter)
+		{
+			_zip = zipWriter;
+
+			// we put these in every zip, so we know where they came from
+			// a bit redundant for movie files given their headers, but w/e
+			PutLump(BinaryStateLump.ZipVersion, WriteZipVersion, false);
+			PutLump(BinaryStateLump.BizVersion, WriteEmuVersion, false);
+		}
+
 		public void PutLump(BinaryStateLump lump, Action<Stream> callback, bool zstdCompress = true)
 		{
 			var filePath = AsTarbomb ? lump.FileName : $"{TOP_LEVEL_DIR_NAME}/{lump.FileName}";
